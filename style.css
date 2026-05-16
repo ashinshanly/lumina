@@ -522,7 +522,7 @@ canvas {
 .feedback {
   position: absolute;
   z-index: 8;
-  top: 20%;
+  top: 25%;
   left: 50%;
   transform: translate(-50%, -50%);
   padding: 6px 16px;
@@ -577,7 +577,7 @@ canvas {
 .power-up-notif {
   position: absolute;
   z-index: 9;
-  top: 18%;
+  top: 25%;
   left: 50%;
   transform: translate(-50%, -50%);
   padding: 8px 20px;
