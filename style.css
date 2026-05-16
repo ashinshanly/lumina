@@ -486,12 +486,12 @@ canvas {
 .feedback {
   position: absolute;
   z-index: 8;
-  top: 30%;
+  top: 15%;
   left: 50%;
   transform: translate(-50%, -50%);
-  padding: 8px 20px;
+  padding: 6px 16px;
   border-radius: 999px;
-  font-size: 1rem;
+  font-size: 0.85rem;
   font-weight: 800;
   pointer-events: none;
   transition: opacity 200ms ease, transform 200ms ease;
@@ -516,12 +516,12 @@ canvas {
 .power-up-notif {
   position: absolute;
   z-index: 9;
-  top: 50%;
+  top: 18%;
   left: 50%;
   transform: translate(-50%, -50%);
-  padding: 12px 28px;
+  padding: 8px 20px;
   border-radius: 14px;
-  font-size: 1rem;
+  font-size: 0.85rem;
   font-weight: 700;
   background: rgba(245, 215, 110, 0.15);
   color: var(--golden);
