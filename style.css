@@ -778,24 +778,32 @@ canvas {
 /* ── Responsive ── */
 @media (max-width: 600px) {
   .mode-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 
   .mode-card {
-    padding: 14px 10px 12px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 16px;
+    align-items: center;
+    text-align: left;
+    padding: 16px;
   }
 
   .mode-icon {
-    font-size: 1.5rem;
+    grid-row: 1 / 3;
+    font-size: 2rem;
+    margin-bottom: 0;
   }
 
   .mode-card strong {
-    font-size: 0.88rem;
+    font-size: 1.05rem;
+    margin-bottom: 2px;
   }
 
   .mode-card p {
-    font-size: 0.72rem;
+    font-size: 0.85rem;
   }
 
   .how-to {
@@ -876,11 +884,12 @@ canvas {
   }
 
   .mode-grid {
-    gap: 6px;
+    gap: 8px;
   }
 
   .mode-card {
-    padding: 12px 8px 10px;
+    padding: 12px 14px;
+    column-gap: 12px;
   }
 }
 
