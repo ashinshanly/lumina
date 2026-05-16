@@ -807,36 +807,32 @@ canvas {
   }
 
   .how-to {
-    grid-template-columns: 1fr;
-    gap: 6px;
-    margin-top: 12px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 16px;
     border-top: 1px dashed rgba(255, 255, 255, 0.1);
-    padding-top: 12px;
+    padding-top: 16px;
   }
 
-  .how-to>div {
-    display: grid;
-    grid-template-columns: 24px 1fr;
-    grid-template-rows: auto auto;
-    column-gap: 12px;
-    padding: 6px 4px;
-    text-align: left;
+  .how-to > div {
+    display: flex;
+    flex-direction: column;
     align-items: center;
+    text-align: center;
+    padding: 0;
   }
 
   .how-to span {
-    grid-row: 1 / 3;
-    align-self: center;
-    margin-bottom: 0;
-    font-size: 1rem;
+    font-size: 1.2rem;
+    margin-bottom: 4px;
   }
 
   .how-to strong {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
   }
 
   .how-to p {
-    font-size: 0.65rem;
+    display: none;
   }
 
   .home>.home-content>p {
