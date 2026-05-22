@@ -21,6 +21,22 @@
           <h1>Lumina</h1>
           <p>Pulsars ignite in a sequence across the void. Memorize the order, then reconstruct the constellation.</p>
           <p class="best-display" id="bestDisplay"></p>
+          <div class="leaderboard leaderboard--home" aria-label="Local leaderboard">
+            <div class="leaderboard-head">
+              <span>Local Leaderboard</span>
+              <strong>Top 5</strong>
+            </div>
+            <div class="leaderboard-columns">
+              <section>
+                <h2>Challenge</h2>
+                <ol id="homeLeaderboardSpeed" class="leaderboard-list"></ol>
+              </section>
+              <section>
+                <h2>Endless</h2>
+                <ol id="homeLeaderboardEndless" class="leaderboard-list"></ol>
+              </section>
+            </div>
+          </div>
           <div class="mode-grid" id="modeGrid">
             <button class="mode-card" data-mode="speed" type="button">
               <span class="mode-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
@@ -103,6 +119,13 @@
             <div><span>Goods</span><strong id="rGood">0</strong></div>
             <div><span>Misses</span><strong id="rMiss">0</strong></div>
             <div><span>Best Combo</span><strong id="rCombo">0</strong></div>
+          </div>
+          <div class="leaderboard leaderboard--result" aria-label="Current mode leaderboard">
+            <div class="leaderboard-head">
+              <span id="resultLeaderboardTitle">Leaderboard</span>
+              <strong>Top 5</strong>
+            </div>
+            <ol id="resultLeaderboard" class="leaderboard-list"></ol>
           </div>
           <div class="result-actions">
             <button id="retryBtn" class="btn btn--primary" type="button">Play Again</button>

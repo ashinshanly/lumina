@@ -36,6 +36,10 @@ const els = {
   powerUpNotif: document.getElementById("powerUpNotif"),
   soundToggle: document.getElementById("soundToggle"),
   bestDisplay: document.getElementById("bestDisplay"),
+  homeLeaderboardSpeed: document.getElementById("homeLeaderboardSpeed"),
+  homeLeaderboardEndless: document.getElementById("homeLeaderboardEndless"),
+  resultLeaderboard: document.getElementById("resultLeaderboard"),
+  resultLeaderboardTitle: document.getElementById("resultLeaderboardTitle"),
 };
 
 // ── Constants ──
@@ -113,7 +117,17 @@ let w = 0, h = 0;
 let mouseX = 0, mouseY = 0;
 
 // Load best scores
-const bestScores = JSON.parse(localStorage.getItem("lumina-best") || "{}");
+const bestScores = loadStoredJson("lumina-best", {});
+const leaderboards = loadStoredJson("lumina-leaderboard", { speed: [], endless: [] });
+
+function loadStoredJson(key, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
+    return value && typeof value === "object" ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 // ── Initialization & Resize ──
 function resize() {
@@ -513,15 +527,18 @@ function endGame(won) {
   els.soundToggle.classList.remove("in-game");
   
   const currentBest = bestScores[modeId] || 0;
+  const leaderboardEntry = saveLeaderboardEntry(won);
   if (score > currentBest) {
     bestScores[modeId] = score;
     localStorage.setItem("lumina-best", JSON.stringify(bestScores));
   }
+  const bestAfterRun = bestScores[modeId] || currentBest;
   updateBestDisplay();
+  renderLeaderboards(leaderboardEntry.id);
   
   els.resultIcon.innerHTML = won ? '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
   els.resultTitle.textContent = won ? "Constellation Formed" : "Signal Faded";
-  els.resultText.textContent = `You reached round ${round} with ${score} points${score > currentBest ? " — new best!" : `. Best: ${bestScores[modeId]}`}`;
+  els.resultText.textContent = `You reached round ${round} with ${formatScore(score)} points${score > currentBest ? " — new best!" : `. Best: ${formatScore(bestAfterRun)}`}`;
   els.rPerfect.textContent = perfects;
   els.rGood.textContent = goods;
   els.rMiss.textContent = misses;
@@ -577,9 +594,70 @@ function showPowerUpNotif(text) {
   setTimeout(() => els.powerUpNotif.classList.add("hidden"), 2000);
 }
 
+function saveLeaderboardEntry(won) {
+  if (!Array.isArray(leaderboards[modeId])) leaderboards[modeId] = [];
+
+  const entry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    score,
+    round,
+    combo: maxCombo,
+    perfects,
+    goods,
+    misses,
+    won,
+    createdAt: Date.now()
+  };
+
+  leaderboards[modeId].push(entry);
+  leaderboards[modeId] = leaderboards[modeId]
+    .sort((a, b) => b.score - a.score || b.round - a.round || b.combo - a.combo || b.createdAt - a.createdAt)
+    .slice(0, 5);
+
+  localStorage.setItem("lumina-leaderboard", JSON.stringify(leaderboards));
+  return entry;
+}
+
+function formatScore(value) {
+  return Number(value || 0).toLocaleString();
+}
+
+function formatRunDate(timestamp) {
+  if (!timestamp) return "Just now";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(timestamp));
+}
+
+function renderLeaderboardList(listEl, entries, activeId = null) {
+  if (!listEl) return;
+
+  if (!entries || entries.length === 0) {
+    listEl.innerHTML = '<li class="leaderboard-empty">No scores yet</li>';
+    return;
+  }
+
+  listEl.innerHTML = entries.map((entry, index) => `
+    <li class="${entry.id === activeId ? "is-current" : ""}">
+      <span class="leaderboard-rank">${index + 1}</span>
+      <span class="leaderboard-main">
+        <strong>${formatScore(entry.score)}</strong>
+        <em>Round ${entry.round} · x${entry.combo}</em>
+      </span>
+      <span class="leaderboard-date">${formatRunDate(entry.createdAt)}</span>
+    </li>
+  `).join("");
+}
+
+function renderLeaderboards(activeId = null) {
+  renderLeaderboardList(els.homeLeaderboardSpeed, leaderboards.speed, activeId);
+  renderLeaderboardList(els.homeLeaderboardEndless, leaderboards.endless, activeId);
+  renderLeaderboardList(els.resultLeaderboard, leaderboards[modeId], activeId);
+  els.resultLeaderboardTitle.textContent = `${MODES[modeId].name} Leaderboard`;
+}
+
 function updateBestDisplay() {
   const currentBest = bestScores[modeId] || 0;
-  els.bestDisplay.textContent = `Best ${MODES[modeId].name} Score: ${currentBest}`;
+  els.bestDisplay.textContent = `Best ${MODES[modeId].name} Score: ${formatScore(currentBest)}`;
+  renderLeaderboards();
 }
 
 // ── Input ──

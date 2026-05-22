@@ -156,8 +156,133 @@ canvas {
   color: var(--golden);
   font-size: 0.85rem;
   font-weight: 600;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
   opacity: 0.8;
+}
+
+/* ── Leaderboard ── */
+.leaderboard {
+  width: 100%;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  background: rgba(8, 14, 22, 0.58);
+  backdrop-filter: blur(12px);
+}
+
+.leaderboard--home {
+  margin: 0 auto 18px;
+  padding: 12px;
+}
+
+.leaderboard--result {
+  margin-bottom: 22px;
+  padding: 12px;
+}
+
+.leaderboard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.leaderboard-head strong {
+  color: var(--golden);
+  font-size: 0.66rem;
+}
+
+.leaderboard-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.leaderboard h2 {
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.2;
+}
+
+.leaderboard-list {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.leaderboard-list li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.035);
+  text-align: left;
+}
+
+.leaderboard-list li.is-current {
+  border-color: rgba(245, 215, 110, 0.35);
+  background: rgba(245, 215, 110, 0.08);
+  box-shadow: 0 0 18px rgba(245, 215, 110, 0.08);
+}
+
+.leaderboard-rank {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(126, 221, 181, 0.1);
+  color: var(--mint);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.leaderboard-main {
+  min-width: 0;
+}
+
+.leaderboard-main strong,
+.leaderboard-main em {
+  display: block;
+}
+
+.leaderboard-main strong {
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.1;
+}
+
+.leaderboard-main em {
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  font-style: normal;
+}
+
+.leaderboard-date {
+  color: var(--text-dim);
+  font-size: 0.66rem;
+  white-space: nowrap;
+  opacity: 0.75;
+}
+
+.leaderboard-empty {
+  display: block !important;
+  color: var(--text-dim);
+  font-size: 0.76rem;
+  text-align: center !important;
+  opacity: 0.72;
 }
 
 /* ── Mode Selection Grid ── */
@@ -780,6 +905,18 @@ canvas {
   .mode-grid {
     grid-template-columns: 1fr;
     gap: 12px;
+  }
+
+  .leaderboard-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .leaderboard--home {
+    padding: 10px;
+  }
+
+  .leaderboard-list li {
+    min-height: 36px;
   }
 
   .mode-card {
