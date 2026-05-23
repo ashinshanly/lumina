@@ -335,12 +335,12 @@ function showWatchPulsar() {
     return;
   }
   const pulsar = pulsars[sequence[watchIndex]];
-  pulsar.glow = 1;
-  pulsar.bloom = 0.7;
+  pulsar.glow = 1.2;
+  pulsar.bloom = 1.1;
   
-  FX.playPulsarTone(sequence[watchIndex]);
+  FX.playPulsarTone(sequence[watchIndex], 0.32, 0.11);
   FX.playBeat();
-  FX.spawn(pulsar.x, pulsar.y, pulsar.color, 6);
+  FX.spawn(pulsar.x, pulsar.y, pulsar.color, 12, { speed: 115, glow: true });
   
   watchIndex++;
   
@@ -376,7 +376,7 @@ function spawnPowerUpDrop() {
 }
 
 function handleCorrectTap(pulsar, speed) {
-  pulsar.bloom = 1;
+  pulsar.bloom = 1.15;
   pulsar.glow = 0;
   replayIndex++;
   currentTarget = sequence[replayIndex] ?? -1;
@@ -1000,6 +1000,63 @@ function drawAurora(now) {
   ctx.restore();
 }
 
+function drawSignalPath(limit, now, color, completeColor) {
+  if (limit <= 1 || sequence.length <= 1) return;
+
+  const points = sequence.slice(0, limit).map(id => pulsars[id]);
+  const pulse = 0.45 + Math.sin(now * 0.006) * 0.16;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.strokeStyle = completeColor;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.045 + pulse * 0.025;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 5;
+  ctx.stroke();
+
+  ctx.globalAlpha = 0.22;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 0.85;
+  ctx.setLineDash([5, 22]);
+  ctx.lineDashOffset = -now * 0.055;
+  ctx.stroke();
+
+  ctx.globalAlpha = 0.1;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.62)";
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([2, 24]);
+  ctx.lineDashOffset = now * 0.065;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const t = (now * 0.0017 + i * 0.27) % 1;
+    const x = a.x + (b.x - a.x) * t;
+    const y = a.y + (b.y - a.y) * t;
+    const r = 0.9 + pulse * 1.3;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r * 4);
+    g.addColorStop(0, "rgba(255, 255, 255, 0.76)");
+    g.addColorStop(0.35, color);
+    g.addColorStop(1, "transparent");
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 function drawConstellations(now) {
   const active = state === "watching" || state === "replaying" || state === "between" || state === "ended";
   if (!active) return;
@@ -1025,32 +1082,12 @@ function drawConstellations(now) {
 
   // Watch phase trail
   if (state === "watching" && watchIndex > 0) {
-    ctx.beginPath();
-    ctx.moveTo(pulsars[sequence[0]].x, pulsars[sequence[0]].y);
-    for (let i = 1; i < watchIndex; i++) {
-      ctx.lineTo(pulsars[sequence[i]].x, pulsars[sequence[i]].y);
-    }
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 10]);
-    ctx.lineDashOffset = -now * 0.05;
-    ctx.stroke();
-    ctx.setLineDash([]);
+    drawSignalPath(watchIndex, now, "rgba(255, 245, 190, 0.86)", "rgba(245, 215, 110, 0.7)");
   }
 
   // Replay phase success trail
   if (state === "replaying" && replayIndex > 1) {
-    ctx.beginPath();
-    ctx.moveTo(pulsars[sequence[0]].x, pulsars[sequence[0]].y);
-    for (let i = 1; i < replayIndex; i++) {
-      ctx.lineTo(pulsars[sequence[i]].x, pulsars[sequence[i]].y);
-    }
-    ctx.strokeStyle = "rgba(126, 221, 181, 0.6)"; // Mint color
-    ctx.lineWidth = 3;
-    ctx.shadowColor = "#7eddb5";
-    ctx.shadowBlur = 10;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+    drawSignalPath(replayIndex, now, "rgba(126, 221, 181, 0.88)", "rgba(126, 221, 181, 0.7)");
   }
   ctx.restore();
 }
@@ -1070,23 +1107,23 @@ function drawBgParticles(now) {
 
 function drawPulsar(p, now) {
   const isTarget = p.id === currentTarget && state === "replaying";
-  const bloomScale = 1 + p.bloom * 0.4;
+  const bloomScale = 1 + p.bloom * 0.55;
   const wiltScale = p.wilt > 0 ? Math.max(0, 1 - p.wilt * 0.5) : 1;
   const idleScale = 1 + Math.sin(now * 0.002 + p.phase) * 0.05;
-  const targetPulse = isTarget ? 0.55 + Math.sin(now * 0.007) * 0.22 : 0;
+  const targetPulse = isTarget ? 0.78 + Math.sin(now * 0.007) * 0.28 : 0;
   const energy = Math.max(p.bloom, p.glow, targetPulse);
 
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.scale(bloomScale * wiltScale * idleScale, bloomScale * wiltScale * idleScale);
 
-  const coronaRadius = p.radius * (1.7 + energy * 0.7);
+  const coronaRadius = p.radius * (1.95 + energy * 1.05);
   const corona = ctx.createRadialGradient(0, 0, p.radius * 0.15, 0, 0, coronaRadius);
   corona.addColorStop(0, p.color);
-  corona.addColorStop(0.25, `${p.color}66`);
-  corona.addColorStop(0.62, `${p.color}18`);
+  corona.addColorStop(0.22, `${p.color}88`);
+  corona.addColorStop(0.55, `${p.color}30`);
   corona.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.globalAlpha = p.wilt > 0 ? 0.12 : 0.42 + energy * 0.26;
+  ctx.globalAlpha = p.wilt > 0 ? 0.12 : Math.min(0.92, 0.5 + energy * 0.34);
   ctx.globalCompositeOperation = "lighter";
   ctx.fillStyle = corona;
   ctx.beginPath();
@@ -1095,12 +1132,12 @@ function drawPulsar(p, now) {
   ctx.globalCompositeOperation = "source-over";
 
   for (let i = 0; i < 3; i++) {
-    const ringScale = 1 + i * 0.16;
+    const ringScale = 1 + i * 0.18 + energy * 0.08;
     ctx.save();
     ctx.rotate(now * (0.00035 + i * 0.00018) * (i % 2 ? -1 : 1) + p.haloSpin + i * 0.75);
-    ctx.globalAlpha = p.wilt > 0 ? 0.08 : 0.22 + p.bloom * 0.24 + (isTarget ? 0.12 : 0);
+    ctx.globalAlpha = p.wilt > 0 ? 0.08 : Math.min(0.76, 0.28 + energy * 0.32 + (isTarget ? 0.16 : 0));
     ctx.strokeStyle = i === 1 ? "rgba(255,255,255,0.58)" : p.color;
-    ctx.lineWidth = Math.max(1, p.radius * (0.026 + i * 0.004));
+    ctx.lineWidth = Math.max(1.4, p.radius * (0.032 + i * 0.006 + energy * 0.004));
     ctx.beginPath();
     ctx.ellipse(0, 0, p.radius * 1.08 * ringScale, p.radius * 0.34 * ringScale, 0, 0.18, Math.PI * 1.72);
     ctx.stroke();
@@ -1113,9 +1150,9 @@ function drawPulsar(p, now) {
 
   ctx.save();
   ctx.rotate(now * 0.00022 + p.haloSpin);
-  ctx.globalAlpha = p.wilt > 0 ? 0.06 : 0.15 + p.bloom * 0.12 + (isTarget ? 0.1 : 0);
+  ctx.globalAlpha = p.wilt > 0 ? 0.06 : Math.min(0.5, 0.18 + energy * 0.22 + (isTarget ? 0.12 : 0));
   ctx.strokeStyle = p.color;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 1.4;
   ctx.setLineDash([2, 9]);
   ctx.beginPath();
   ctx.ellipse(0, 0, p.radius * 1.42, p.radius * 0.52, 0, 0, Math.PI * 2);
@@ -1124,10 +1161,17 @@ function drawPulsar(p, now) {
 
   if (p.bloom > 0) {
     ctx.strokeStyle = p.color;
-    ctx.lineWidth = 1.5 + p.bloom * 2;
-    ctx.globalAlpha = p.bloom * 0.7;
+    ctx.lineWidth = 2 + p.bloom * 3;
+    ctx.globalAlpha = Math.min(1, p.bloom * 0.9);
     ctx.beginPath();
     ctx.arc(0, 0, p.radius + 12 + (1 - p.bloom) * 48, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.72)";
+    ctx.lineWidth = 1.2;
+    ctx.globalAlpha = Math.min(0.75, p.bloom * 0.65);
+    ctx.beginPath();
+    ctx.arc(0, 0, p.radius + 28 + (1 - p.bloom) * 34, 0, Math.PI * 2);
     ctx.stroke();
   }
 
@@ -1140,16 +1184,16 @@ function drawPulsar(p, now) {
     const sparkle = 0.55 + Math.sin(now * 0.003 + i + p.phase) * 0.25;
     ctx.globalAlpha = p.wilt > 0 ? 0.12 : sparkle;
     ctx.shadowColor = p.color;
-    ctx.shadowBlur = 6 + energy * 8;
+    ctx.shadowBlur = 9 + energy * 12;
     ctx.fillStyle = i % 4 === 0 ? "#ffffff" : p.color;
     ctx.beginPath();
-    ctx.arc(ox, oy, 1.1 + (i % 3) * 0.45 + energy * 0.7, 0, Math.PI * 2);
+    ctx.arc(ox, oy, 1.35 + (i % 3) * 0.55 + energy * 1.1, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.shadowBlur = 0;
 
   ctx.globalAlpha = p.wilt > 0 ? 0.4 : 1;
-  const coreRadius = p.radius * (0.34 + energy * 0.1) + Math.sin(now * 0.004 + p.id) * 1.5;
+  const coreRadius = p.radius * (0.38 + energy * 0.16) + Math.sin(now * 0.004 + p.id) * 1.5;
   const centerGrad = ctx.createRadialGradient(-coreRadius * 0.3, -coreRadius * 0.35, 1, 0, 0, coreRadius * 1.35);
   centerGrad.addColorStop(0, "#ffffff");
   centerGrad.addColorStop(0.22, "#fff8dc");
@@ -1157,20 +1201,20 @@ function drawPulsar(p, now) {
   centerGrad.addColorStop(1, "rgba(0,0,0,0.58)");
   ctx.fillStyle = centerGrad;
   ctx.shadowColor = p.color;
-  ctx.shadowBlur = 14 + energy * 18;
+  ctx.shadowBlur = 20 + energy * 28;
   ctx.beginPath();
   ctx.arc(0, 0, coreRadius, 0, Math.PI * 2);
   ctx.fill();
   ctx.shadowBlur = 0;
 
-  ctx.globalAlpha = p.wilt > 0 ? 0.12 : 0.45 + energy * 0.2;
+  ctx.globalAlpha = p.wilt > 0 ? 0.12 : Math.min(0.92, 0.5 + energy * 0.28);
   ctx.strokeStyle = "rgba(255,255,255,0.72)";
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 1.4;
   ctx.beginPath();
   ctx.arc(0, 0, coreRadius * 1.28, Math.PI * 1.08, Math.PI * 1.72);
   ctx.stroke();
 
-  ctx.globalAlpha = p.wilt > 0 ? 0.2 : 0.7;
+  ctx.globalAlpha = p.wilt > 0 ? 0.2 : 0.88;
   ctx.fillStyle = "#ffffff";
   ctx.font = `600 ${Math.max(10, p.radius * 0.35)}px 'Outfit', system-ui`;
   ctx.textAlign = "center";

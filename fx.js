@@ -10,6 +10,7 @@ const FX = (() => {
   let ambientStarted = false;
   let soundEnabled = true;
 
+  const MASTER_VOLUME = 1.65;
   const PENTATONIC = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33];
 
   // ── Ripples ──
@@ -51,10 +52,11 @@ const FX = (() => {
     const now = audioCtx.currentTime;
     const osc = audioCtx.createOscillator();
     const g = audioCtx.createGain();
+    const peak = Math.min(vol * MASTER_VOLUME, 0.22);
     osc.type = type;
     osc.frequency.value = freq;
     g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(vol, now + 0.02);
+    g.gain.exponentialRampToValueAtTime(peak, now + 0.02);
     g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
     osc.connect(g);
     g.connect(audioCtx.destination);
@@ -85,7 +87,7 @@ const FX = (() => {
       osc.start();
       ambientOscs.push(osc);
     });
-    ambientGain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 3);
+    ambientGain.gain.linearRampToValueAtTime(0.7, audioCtx.currentTime + 3);
     const lfo = audioCtx.createOscillator();
     lfo.frequency.value = 0.07;
     const lg = audioCtx.createGain();
@@ -106,17 +108,19 @@ const FX = (() => {
   }
 
   // ── Exposed SFX ──
-  function playPulsarTone(idx) { tone(PENTATONIC[idx % 7], 0.25, 'sine', 0.07); }
-  function playBeat() { tone(220, 0.08, 'triangle', 0.03); }
+  function playPulsarTone(idx, dur = 0.3, vol = 0.1) {
+    tone(PENTATONIC[idx % 7], dur, 'sine', vol);
+  }
+  function playBeat() { tone(220, 0.08, 'triangle', 0.04); }
 
   function playPerfect(idx) {
     const b = PENTATONIC[idx % 7];
-    tone(b, 0.22, 'sine', 0.07);
-    tone(b * 1.25, 0.18, 'sine', 0.05);
-    setTimeout(() => tone(b * 1.5, 0.15, 'sine', 0.04), 60);
+    playPulsarTone(idx, 0.26, 0.11);
+    tone(b * 2, 0.12, 'sine', 0.035);
+    setTimeout(() => tone(b * 1.5, 0.14, 'sine', 0.03), 55);
   }
 
-  function playGood(idx) { tone(PENTATONIC[idx % 7], 0.18, 'sine', 0.06); }
+  function playGood(idx) { playPulsarTone(idx, 0.22, 0.095); }
 
   function playMiss() {
     tone(110, 0.25, 'sawtooth', 0.03);
