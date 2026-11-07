@@ -1,10 +1,14 @@
 /* ═══════════════════════════════════════════════════════
-   Lumina — Minimal Rhythm-Spatial Cosmic Memory Game
+   Lumina — High-FPS Minimal Cosmic Memory Game
    ═══════════════════════════════════════════════════════ */
 
 const canvas = document.getElementById("garden");
-const ctx = canvas.getContext("2d");
+const ctx = canvas.getContext("2d", { alpha: false });
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+// Offscreen cache canvas for static/slow cosmic background layers
+const bgCacheCanvas = document.createElement("canvas");
+const bgCacheCtx = bgCacheCanvas.getContext("2d", { alpha: false });
 
 // DOM refs
 const els = {
@@ -95,30 +99,10 @@ const MODES = {
 };
 
 const POWER_UPS = [
-  {
-    id: "freeze",
-    symbol: "❄",
-    icon: "❄",
-    name: "+Time",
-  },
-  {
-    id: "shield",
-    symbol: "🛡",
-    icon: "🛡",
-    name: "+Shield",
-  },
-  {
-    id: "double",
-    symbol: "⚡",
-    icon: "⚡",
-    name: "2× Score",
-  },
-  {
-    id: "slow",
-    symbol: "☾",
-    icon: "☾",
-    name: "Slow",
-  },
+  { id: "freeze", symbol: "❄", icon: "❄", name: "+Time" },
+  { id: "shield", symbol: "🛡", icon: "🛡", name: "+Shield" },
+  { id: "double", symbol: "⚡", icon: "⚡", name: "2× Score" },
+  { id: "slow", symbol: "☾", icon: "☾", name: "Slow" },
 ];
 
 // ── State ──
@@ -126,12 +110,8 @@ let state = "home"; // home | countdown | watching | replaying | between | ended
 let modeId = "speed";
 let mode = MODES.speed;
 let pulsars = [];
-let bgParticles = [];
-let stars = [];
+let twinkleStars = [];
 let shootingStars = [];
-let nebulaSeeds = [];
-let cosmicDust = [];
-let galaxyBands = [];
 let beamPulses = []; // Travelling photon comets along constellation lines
 let roundClearWave = 0; // 0..1 resonance wave on round clear
 let nextAmbientBeamAt = 0;
@@ -193,6 +173,106 @@ function clearAllTimers() {
   activeTimers = [];
 }
 
+// Pre-render a pulsar's soft radial corona glow sprite once per resize
+function buildPulsarCoronaSprite(color, radius) {
+  const size = Math.max(64, Math.ceil(radius * 5));
+  const off = document.createElement("canvas");
+  off.width = size;
+  off.height = size;
+  const octx = off.getContext("2d");
+  const cx = size / 2;
+  const r = size / 2;
+  const grad = octx.createRadialGradient(cx, cx, r * 0.04, cx, cx, r);
+  grad.addColorStop(0, color);
+  grad.addColorStop(0.26, `${color}66`);
+  grad.addColorStop(0.6, `${color}1a`);
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  octx.fillStyle = grad;
+  octx.beginPath();
+  octx.arc(cx, cx, r, 0, Math.PI * 2);
+  octx.fill();
+  return off;
+}
+
+// Pre-render the deep space sky, nebulae, galaxy bands, static stars, and vignette onto bgCacheCanvas
+function buildBackgroundCache() {
+  if (w <= 0 || h <= 0) return;
+  bgCacheCanvas.width = Math.round(w * DPR);
+  bgCacheCanvas.height = Math.round(h * DPR);
+  bgCacheCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  // 1. Deep space gradient
+  const grad = bgCacheCtx.createLinearGradient(0, 0, w * 0.3, h);
+  grad.addColorStop(0, "#04070e");
+  grad.addColorStop(0.4, "#080e1c");
+  grad.addColorStop(0.75, "#0a1324");
+  grad.addColorStop(1, "#050811");
+  bgCacheCtx.fillStyle = grad;
+  bgCacheCtx.fillRect(0, 0, w, h);
+
+  // 2. Soft nebula clouds (drawn once into cache!)
+  bgCacheCtx.save();
+  bgCacheCtx.globalCompositeOperation = "lighter";
+  const nebulae = [
+    { x: w * 0.22, y: h * 0.28, r: Math.max(w, h) * 0.32, hue: 200, a: 0.055 },
+    { x: w * 0.78, y: h * 0.34, r: Math.max(w, h) * 0.28, hue: 265, a: 0.05 },
+    { x: w * 0.5, y: h * 0.68, r: Math.max(w, h) * 0.35, hue: 168, a: 0.045 },
+    { x: w * 0.3, y: h * 0.75, r: Math.max(w, h) * 0.24, hue: 320, a: 0.035 },
+  ];
+  for (const n of nebulae) {
+    const ng = bgCacheCtx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+    ng.addColorStop(0, `hsla(${n.hue}, 55%, 52%, ${n.a})`);
+    ng.addColorStop(0.5, `hsla(${n.hue}, 45%, 36%, ${n.a * 0.45})`);
+    ng.addColorStop(1, "transparent");
+    bgCacheCtx.fillStyle = ng;
+    bgCacheCtx.beginPath();
+    bgCacheCtx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+    bgCacheCtx.fill();
+  }
+
+  // 3. Diagonal Milky Way band (soft gradient, zero blur filter)
+  bgCacheCtx.save();
+  bgCacheCtx.translate(w / 2, h / 2);
+  bgCacheCtx.rotate(-0.42);
+  const bandH = Math.max(w, h) * 0.22;
+  const bandGrad = bgCacheCtx.createLinearGradient(0, -bandH, 0, bandH);
+  bandGrad.addColorStop(0, "transparent");
+  bandGrad.addColorStop(0.5, "rgba(126, 221, 181, 0.028)");
+  bandGrad.addColorStop(1, "transparent");
+  bgCacheCtx.fillStyle = bandGrad;
+  bgCacheCtx.fillRect(-w, -bandH, w * 2, bandH * 2);
+  bgCacheCtx.restore();
+  bgCacheCtx.restore();
+
+  // 4. Static background starfield (~180 stars baked into cache)
+  bgCacheCtx.save();
+  for (let i = 0; i < 180; i++) {
+    const sx = Math.random() * w;
+    const sy = Math.random() * h;
+    const sr = 0.4 + Math.random() * 1.1;
+    const sa = 0.12 + Math.random() * 0.42;
+    bgCacheCtx.fillStyle = `rgba(220, 235, 255, ${sa})`;
+    bgCacheCtx.beginPath();
+    bgCacheCtx.arc(sx, sy, sr, 0, Math.PI * 2);
+    bgCacheCtx.fill();
+  }
+  bgCacheCtx.restore();
+
+  // 5. Subtle edge vignette baked into cache
+  const vg = bgCacheCtx.createRadialGradient(
+    w / 2,
+    h / 2,
+    Math.min(w, h) * 0.38,
+    w / 2,
+    h / 2,
+    Math.max(w, h) * 0.78
+  );
+  vg.addColorStop(0, "transparent");
+  vg.addColorStop(1, "rgba(0,0,0,0.42)");
+  bgCacheCtx.fillStyle = vg;
+  bgCacheCtx.fillRect(0, 0, w, h);
+}
+
 // ── Initialization & Resize ──
 function resize() {
   const rect = canvas.getBoundingClientRect();
@@ -204,110 +284,61 @@ function resize() {
   canvas.height = Math.round(h * DPR);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   updatePulsarPositions();
-  initBgParticles();
-  initStars();
-  initNebulae();
-  initCosmicDust();
-  initGalaxyBands();
+  initTwinkleStars();
+  buildBackgroundCache();
 }
 
 function updatePulsarPositions() {
   const baseRadius = Math.min(w, h) * 0.056;
-  pulsars = PULSAR_POSITIONS.map((fp, i) => ({
-    id: i,
-    baseX: fp.px * w,
-    baseY: fp.py * h,
-    x: fp.px * w,
-    y: fp.py * h,
-    color: COLORS[i],
-    rotSpeed1: (Math.random() * 0.5 + 0.5) * (i % 2 === 0 ? 1 : -1),
-    rotSpeed2: (Math.random() * 0.5 + 0.5) * (i % 2 === 0 ? -1 : 1),
-    haloSpin: Math.random() * Math.PI * 2,
-    radius: baseRadius + (i % 3) * 3,
-    bloom: 0,
-    wilt: 0,
-    glow: 0,
-    scale: 1,
-    scaleVel: 0,
-    phase: (i * Math.PI * 2) / 7 + 0.4,
-  }));
+  pulsars = PULSAR_POSITIONS.map((fp, i) => {
+    const radius = baseRadius + (i % 3) * 3;
+    return {
+      id: i,
+      baseX: fp.px * w,
+      baseY: fp.py * h,
+      x: fp.px * w,
+      y: fp.py * h,
+      color: COLORS[i],
+      haloSpin: Math.random() * Math.PI * 2,
+      radius,
+      sprite: buildPulsarCoronaSprite(COLORS[i], radius),
+      bloom: 0,
+      wilt: 0,
+      glow: 0,
+      scale: 1,
+      scaleVel: 0,
+      phase: (i * Math.PI * 2) / 7 + 0.4,
+    };
+  });
 }
 
-function initBgParticles() {
-  const count = Math.floor((w * h) / 11000);
-  bgParticles = Array.from({ length: count }, () => ({
+function initTwinkleStars() {
+  // Keep only 42 lightweight animated twinkling stars in the 60fps loop
+  twinkleStars = Array.from({ length: 42 }, () => ({
     x: Math.random() * w,
     y: Math.random() * h,
-    size: 1 + Math.random() * 2.4,
-    speed: 0.16 + Math.random() * 0.36,
+    size: 0.8 + Math.random() * 1.4,
     phase: Math.random() * Math.PI * 2,
-    drift: (Math.random() - 0.5) * 0.3,
-  }));
-}
-
-function initStars() {
-  const count = Math.floor((w * h) / 2600);
-  stars = Array.from({ length: count }, () => ({
-    x: Math.random() * w,
-    y: Math.random() * h,
-    size: 0.3 + Math.random() * 1.8,
-    phase: Math.random() * Math.PI * 2,
-    speed: 0.5 + Math.random() * 1.6,
-    hue: Math.random() > 0.7 ? 200 + Math.random() * 60 : 30 + Math.random() * 30,
-  }));
-}
-
-function initNebulae() {
-  nebulaSeeds = Array.from({ length: 5 }, () => ({
-    x: Math.random() * w,
-    y: Math.random() * h,
-    rx: 90 + Math.random() * 260,
-    ry: 65 + Math.random() * 180,
-    hue: [260, 320, 200, 170, 30][Math.floor(Math.random() * 5)],
-    alpha: 0.025 + Math.random() * 0.035,
-    drift: (Math.random() - 0.5) * 0.08,
-    phase: Math.random() * Math.PI * 2,
-  }));
-}
-
-function initCosmicDust() {
-  const count = Math.floor((w * h) / 18000);
-  cosmicDust = Array.from({ length: count }, () => ({
-    x: Math.random() * w,
-    y: Math.random() * h,
-    r: 14 + Math.random() * 42,
-    vx: (Math.random() - 0.5) * 0.12,
-    vy: -0.03 - Math.random() * 0.08,
-    hue: [170, 205, 255, 315, 38][Math.floor(Math.random() * 5)],
-    alpha: 0.018 + Math.random() * 0.04,
-    phase: Math.random() * Math.PI * 2,
-  }));
-}
-
-function initGalaxyBands() {
-  galaxyBands = Array.from({ length: 4 }, (_, i) => ({
-    offset: (i - 1.5) * 34,
-    width: 54 + i * 22,
-    alpha: 0.018 + i * 0.006,
-    hue: [204, 258, 178, 38][i],
-    phase: Math.random() * Math.PI * 2,
+    speed: 0.8 + Math.random() * 1.4,
   }));
 }
 
 function spawnShootingStar() {
+  if (shootingStars.length >= 2) return;
   shootingStars.push({
     x: Math.random() * w * 0.8,
     y: Math.random() * h * 0.3,
-    vx: 3.2 + Math.random() * 4.2,
-    vy: 1.5 + Math.random() * 2.5,
-    life: 0.65 + Math.random() * 0.5,
-    maxLife: 0.65 + Math.random() * 0.5,
-    length: 45 + Math.random() * 85,
+    vx: 3.4 + Math.random() * 4,
+    vy: 1.6 + Math.random() * 2.4,
+    life: 0.6 + Math.random() * 0.4,
+    maxLife: 0.6 + Math.random() * 0.4,
+    length: 45 + Math.random() * 75,
   });
 }
 
 function spawnBeamPulse(fromIdx, toIdx, color, speed = 2.6, triggerBloomOnArrive = false) {
   if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+  if (beamPulses.length >= 6) beamPulses.shift();
   beamPulses.push({
     fromIdx,
     toIdx,
@@ -513,8 +544,8 @@ function showWatchPulsar() {
 
   FX.playPulsarTone(currIdx);
   FX.playBeat();
-  FX.spawn(pulsar.x, pulsar.y, pulsar.color, 8, { speed: 110 });
-  FX.spawnRipple(pulsar.x, pulsar.y, pulsar.color, 110, 2);
+  FX.spawn(pulsar.x, pulsar.y, pulsar.color, 7, { speed: 105 });
+  FX.spawnRipple(pulsar.x, pulsar.y, pulsar.color, 105, 2);
 
   watchIndex++;
   renderSeqDots();
@@ -587,16 +618,16 @@ function handleCorrectTap(pulsar, speed) {
     pts = Math.round((120 + round * 20) * (1 + combo * 0.1));
     showFeedback("✦ PERFECT", "perfect");
     FX.playPerfect(pulsar.id);
-    FX.spawn(pulsar.x, pulsar.y, pulsar.color, 20, { speed: 165 });
-    FX.spawnRipple(pulsar.x, pulsar.y, pulsar.color, 185, 2);
+    FX.spawn(pulsar.x, pulsar.y, pulsar.color, 14, { speed: 155 });
+    FX.spawnRipple(pulsar.x, pulsar.y, pulsar.color, 175, 2);
   } else {
     goods++;
     combo++;
     pts = Math.round((60 + round * 10) * (1 + combo * 0.05));
     showFeedback("GOOD", "good");
     FX.playGood(pulsar.id);
-    FX.spawn(pulsar.x, pulsar.y, pulsar.color, 10);
-    FX.spawnRipple(pulsar.x, pulsar.y, pulsar.color, 115, 1);
+    FX.spawn(pulsar.x, pulsar.y, pulsar.color, 8);
+    FX.spawnRipple(pulsar.x, pulsar.y, pulsar.color, 110, 1);
   }
 
   if (activeEffects.doublePoints) pts *= 2;
@@ -630,7 +661,7 @@ function handleRoundClear() {
   setPhase("SYNCED", "");
   FX.playRoundClear();
   FX.spawnCelebration(w, h);
-  FX.spawnRipple(w / 2, h / 2, "#7eddb5", Math.min(w, h) * 0.45, 3);
+  FX.spawnRipple(w / 2, h / 2, "#7eddb5", Math.min(w, h) * 0.42, 2);
   showFeedback(bonus > 0 ? "✦ FLAWLESS" : "✦ SYNCED", "perfect");
 
   activeEffects.doublePoints = false;
@@ -659,7 +690,7 @@ function handleWrongTap(pulsar) {
   showFeedback("✕ MISS", "miss");
   FX.playMiss();
   FX.shake(6);
-  FX.spawnRipple(pulsar ? pulsar.x : mouseX, pulsar ? pulsar.y : mouseY, "#ff7b7b", 190, 2);
+  FX.spawnRipple(pulsar ? pulsar.x : mouseX, pulsar ? pulsar.y : mouseY, "#ff7b7b", 180, 2);
 
   updateHUD();
   updateShields();
@@ -717,8 +748,8 @@ function activatePowerUp(p) {
     activeEffects.slowMotion = true;
   }
 
-  FX.spawn(p.x, p.y, "#f5d76e", 28, { speed: 200, life: 1, glow: true });
-  FX.spawnRipple(p.x, p.y, "#f5d76e", 140, 2);
+  FX.spawn(p.x, p.y, "#f5d76e", 20, { speed: 180, life: 0.85 });
+  FX.spawnRipple(p.x, p.y, "#f5d76e", 130, 2);
   activePowerUpDrop = null;
 }
 
@@ -1047,8 +1078,8 @@ function update(dt, now) {
       : 1.0;
   camZoom += (targetZoom - camZoom) * Math.min(1, dt * 4.5);
 
-  const targetPanX = ((mouseX || w / 2) - w / 2) * -0.015;
-  const targetPanY = ((mouseY || h / 2) - h / 2) * -0.015;
+  const targetPanX = ((mouseX || w / 2) - w / 2) * -0.014;
+  const targetPanY = ((mouseY || h / 2) - h / 2) * -0.014;
   camPanX += (targetPanX - camPanX) * Math.min(1, dt * 5);
   camPanY += (targetPanY - camPanY) * Math.min(1, dt * 5);
 
@@ -1060,8 +1091,8 @@ function update(dt, now) {
   if (state === "home" && pulsars.length === 7 && now > nextAmbientBeamAt) {
     const a = Math.floor(Math.random() * pulsars.length);
     const b = (a + 1 + Math.floor(Math.random() * (pulsars.length - 1))) % pulsars.length;
-    spawnBeamPulse(a, b, pulsars[b].color, 1.4, true);
-    nextAmbientBeamAt = now + 900 + Math.random() * 900;
+    spawnBeamPulse(a, b, pulsars[b].color, 1.35, true);
+    nextAmbientBeamAt = now + 1100 + Math.random() * 900;
   }
 
   // Update travelling photon beams
@@ -1070,8 +1101,8 @@ function update(dt, now) {
     bp.t += dt * bp.speed;
     if (bp.t >= 1) {
       if (bp.triggerBloomOnArrive && state === "home" && pulsars[bp.toIdx]) {
-        pulsars[bp.toIdx].bloom = 0.55;
-        pulsars[bp.toIdx].scaleVel = 1.6;
+        pulsars[bp.toIdx].bloom = 0.5;
+        pulsars[bp.toIdx].scaleVel = 1.4;
       }
       beamPulses.splice(i, 1);
     }
@@ -1079,32 +1110,19 @@ function update(dt, now) {
 
   // Zero-G Pulsar Drift + Spring Physics
   for (const p of pulsars) {
-    const driftRadius = state === "home" ? 7 : 3.5;
+    const driftRadius = state === "home" ? 6 : 3;
     p.x = p.baseX + Math.sin(now * 0.0011 + p.phase) * driftRadius;
     p.y = p.baseY + Math.cos(now * 0.0014 + p.phase * 1.3) * driftRadius;
 
     // Elastic spring for p.scale
     const springForce = (1 - p.scale) * 38;
     p.scaleVel = (p.scaleVel + springForce * dt) * Math.pow(0.08, dt);
-    p.scale = Math.max(0.7, Math.min(1.45, p.scale + p.scaleVel * dt));
+    p.scale = Math.max(0.75, Math.min(1.4, p.scale + p.scaleVel * dt));
 
     p.bloom = Math.max(0, p.bloom - dt * 1.5);
     p.wilt = Math.max(0, p.wilt - dt * 1.8);
     // Always decay glow uniformly — never hold glow on currentTarget
     if (p.glow > 0) p.glow = Math.max(0, p.glow - dt * 2.5);
-
-    // Combo fire for last tapped pulsar only
-    if (combo >= 5 && state === "replaying" && replayIndex > 0 && p.id === sequence[replayIndex - 1]) {
-      if (Math.random() < 0.22) {
-        const a = Math.random() * Math.PI * 2;
-        const r = p.radius + 10;
-        FX.spawn(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, p.color, 1, {
-          speed: 24,
-          size: 1.6,
-          life: 0.4,
-        });
-      }
-    }
   }
 
   // Replay timeout & timer bar update
@@ -1121,45 +1139,14 @@ function update(dt, now) {
     }
   }
 
-  // Background particles
-  for (const p of bgParticles) {
-    p.y -= p.speed;
-    p.x += p.drift + Math.sin(now * 0.001 + p.phase) * 0.15;
-    if (p.y < -10) {
-      p.y = h + 10;
-      p.x = Math.random() * w;
-    }
-    if (p.x < -10) p.x = w + 10;
-    if (p.x > w + 10) p.x = -10;
-  }
-
   // Shooting stars
-  if (Math.random() < 0.004) spawnShootingStar();
+  if (Math.random() < 0.003) spawnShootingStar();
   for (let i = shootingStars.length - 1; i >= 0; i--) {
     const s = shootingStars[i];
     s.life -= dt;
     s.x += s.vx;
     s.y += s.vy;
     if (s.life <= 0) shootingStars.splice(i, 1);
-  }
-
-  // Nebula drift
-  for (const n of nebulaSeeds) {
-    n.x += n.drift;
-    n.y += Math.sin(now * 0.0003 + n.phase) * 0.04;
-    if (n.x < -n.rx) n.x = w + n.rx;
-    if (n.x > w + n.rx) n.x = -n.rx;
-  }
-
-  for (const d of cosmicDust) {
-    d.x += d.vx + Math.sin(now * 0.00025 + d.phase) * 0.035;
-    d.y += d.vy;
-    if (d.y < -d.r) {
-      d.y = h + d.r;
-      d.x = Math.random() * w;
-    }
-    if (d.x < -d.r) d.x = w + d.r;
-    if (d.x > w + d.r) d.x = -d.r;
   }
 
   // Power-up
@@ -1180,163 +1167,33 @@ function update(dt, now) {
   }
 }
 
-// ── Render ──
-function drawBackground() {
-  const tempShift = Math.min(round * 2, 20);
-  const grad = ctx.createLinearGradient(0, 0, w * 0.3, h);
-  grad.addColorStop(0, `hsl(${220 - tempShift}, 40%, 4%)`);
-  grad.addColorStop(0.35, `hsl(${215 - tempShift}, 40%, 6%)`);
-  grad.addColorStop(0.65, `hsl(${210 - tempShift}, 40%, 8%)`);
-  grad.addColorStop(1, `hsl(${225 - tempShift}, 30%, 5%)`);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, w, h);
-}
-
-function drawNebulae(now) {
+// ── Fast Hardware-Accelerated Render ──
+function drawTwinkleStars(now) {
   ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  for (const n of nebulaSeeds) {
-    const breathe = 1 + Math.sin(now * 0.0004 + n.phase) * 0.12;
-    const intensity = 1 + combo / 20;
-    const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.rx * breathe * intensity);
-    const sat = 30 + Math.sin(now * 0.0002 + n.phase) * 10;
-    g.addColorStop(0, `hsla(${n.hue}, ${sat}%, 45%, ${n.alpha * 1.2})`);
-    g.addColorStop(0.4, `hsla(${n.hue}, ${sat}%, 30%, ${n.alpha * 0.7})`);
-    g.addColorStop(1, "transparent");
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.ellipse(
-      n.x,
-      n.y,
-      n.rx * breathe * intensity,
-      n.ry * breathe * intensity,
-      n.phase * 0.5,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
-function drawGalaxyBand(now) {
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  ctx.translate(w / 2, h / 2);
-  ctx.rotate(-0.42);
-
-  for (const band of galaxyBands) {
-    const drift = Math.sin(now * 0.00018 + band.phase) * 18;
-    const y = band.offset + drift;
-    const grad = ctx.createLinearGradient(-w, y, w, y);
-    grad.addColorStop(0, "transparent");
-    grad.addColorStop(0.22, `hsla(${band.hue}, 44%, 54%, ${band.alpha * 0.4})`);
-    grad.addColorStop(0.5, `hsla(${band.hue}, 48%, 68%, ${band.alpha})`);
-    grad.addColorStop(0.78, `hsla(${band.hue}, 44%, 54%, ${band.alpha * 0.4})`);
-    grad.addColorStop(1, "transparent");
-    ctx.fillStyle = grad;
-    ctx.filter = "blur(10px)";
-    ctx.fillRect(-w, y - band.width / 2, w * 2, band.width);
-  }
-
-  ctx.filter = "none";
-  ctx.restore();
-}
-
-function drawCosmicDust(now) {
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  for (const d of cosmicDust) {
-    const breathe = 0.7 + Math.sin(now * 0.0007 + d.phase) * 0.3;
-    const g = ctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r);
-    g.addColorStop(0, `hsla(${d.hue}, 45%, 72%, ${d.alpha * breathe})`);
-    g.addColorStop(0.45, `hsla(${d.hue}, 38%, 50%, ${d.alpha * 0.45 * breathe})`);
-    g.addColorStop(1, "transparent");
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
-function drawStars(now) {
-  ctx.save();
-  const px = (mouseX - w / 2) * 0.022;
-  const py = (mouseY - h / 2) * 0.022;
-  ctx.translate(-px, -py);
-
-  for (const s of stars) {
-    const twinkle = 0.3 + Math.sin(now * 0.001 * s.speed + s.phase) * 0.35;
-    const alpha = Math.max(0.05, twinkle);
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = `hsl(${s.hue}, 20%, 85%)`;
+  ctx.fillStyle = "#e2eeff";
+  for (const s of twinkleStars) {
+    ctx.globalAlpha = 0.25 + Math.sin(now * 0.0012 * s.speed + s.phase) * 0.22;
     ctx.beginPath();
     ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
     ctx.fill();
-    if (s.size > 1.4 && alpha > 0.5) {
-      ctx.globalAlpha = alpha * 0.3;
-      ctx.strokeStyle = `hsl(${s.hue}, 30%, 80%)`;
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(s.x - s.size * 3, s.y);
-      ctx.lineTo(s.x + s.size * 3, s.y);
-      ctx.moveTo(s.x, s.y - s.size * 3);
-      ctx.lineTo(s.x, s.y + s.size * 3);
-      ctx.stroke();
-    }
   }
   ctx.restore();
 }
 
 function drawShootingStars() {
+  if (!shootingStars.length) return;
   ctx.save();
   for (const s of shootingStars) {
     const t = s.life / s.maxLife;
-    const tailX = s.x - s.vx * s.length * 0.15;
-    const tailY = s.y - s.vy * s.length * 0.15;
-    const grad = ctx.createLinearGradient(tailX, tailY, s.x, s.y);
-    grad.addColorStop(0, "transparent");
-    grad.addColorStop(1, `rgba(220, 230, 245, ${t * 0.75})`);
-    ctx.strokeStyle = grad;
-    ctx.lineWidth = 1.5;
-    ctx.globalAlpha = t;
+    const tailX = s.x - s.vx * s.length * 0.14;
+    const tailY = s.y - s.vy * s.length * 0.14;
+    ctx.globalAlpha = t * 0.75;
+    ctx.strokeStyle = "#dce8ff";
+    ctx.lineWidth = 1.4;
     ctx.beginPath();
     ctx.moveTo(tailX, tailY);
     ctx.lineTo(s.x, s.y);
     ctx.stroke();
-    ctx.fillStyle = `rgba(240, 248, 255, ${t * 0.9})`;
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, 1.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
-function drawAurora(now) {
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  const points = 60;
-  for (let layer = 0; layer < 2; layer++) {
-    const yBase = h * (0.12 + layer * 0.06);
-    const hue = layer === 0 ? 160 + round * 2 : 270 - round;
-    ctx.beginPath();
-    ctx.moveTo(0, yBase);
-    for (let i = 0; i <= points; i++) {
-      const px = (i / points) * w;
-      const wave1 = Math.sin(i * 0.15 + now * 0.0006 + layer) * 25;
-      const wave2 = Math.sin(i * 0.08 + now * 0.0003) * 15;
-      ctx.lineTo(px, yBase + wave1 + wave2);
-    }
-    ctx.lineTo(w, 0);
-    ctx.lineTo(0, 0);
-    ctx.closePath();
-    const ag = ctx.createLinearGradient(0, 0, 0, yBase + 40);
-    ag.addColorStop(0, "transparent");
-    ag.addColorStop(0.7, `hsla(${hue}, 40%, 40%, 0.03)`);
-    ag.addColorStop(1, `hsla(${hue}, 35%, 35%, 0.06)`);
-    ctx.fillStyle = ag;
-    ctx.fill();
   }
   ctx.restore();
 }
@@ -1345,24 +1202,23 @@ function drawConstellations(now) {
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
 
-  // Base faint lines between nearby pulsars (also visible on Home screen)
+  // Base faint lines between nearby pulsars
   const maxDist = Math.min(w, h) * 0.45;
-  const baseLineOpacity = state === "home" ? 0.09 : 0.06;
+  const baseLineOpacity = state === "home" ? 0.08 : 0.055;
+  ctx.strokeStyle = `rgba(180, 210, 235, ${baseLineOpacity})`;
+  ctx.lineWidth = 0.9;
+  ctx.beginPath();
   for (let i = 0; i < pulsars.length; i++) {
     for (let j = i + 1; j < pulsars.length; j++) {
       const a = pulsars[i],
         b = pulsars[j];
-      const dist = Math.hypot(a.x - b.x, a.y - b.y);
-      if (dist > maxDist) continue;
-      const alpha = (1 - dist / maxDist) * baseLineOpacity;
-      ctx.strokeStyle = `rgba(180, 210, 235, ${alpha})`;
-      ctx.lineWidth = 0.9;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
+      if (Math.hypot(a.x - b.x, a.y - b.y) <= maxDist) {
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      }
     }
   }
+  ctx.stroke();
 
   // Watch phase trail
   if (state === "watching" && watchIndex > 1) {
@@ -1371,7 +1227,7 @@ function drawConstellations(now) {
     for (let i = 1; i < watchIndex; i++) {
       ctx.lineTo(pulsars[sequence[i]].x, pulsars[sequence[i]].y);
     }
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.38)";
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.36)";
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 10]);
     ctx.lineDashOffset = -now * 0.05;
@@ -1379,198 +1235,141 @@ function drawConstellations(now) {
     ctx.setLineDash([]);
   }
 
-  // Replay phase completed trail (only connects already-tapped pulsars)
+  // Replay phase completed trail (zero shadowBlur — layered stroke instead)
   if ((state === "replaying" || state === "between") && replayIndex > 1) {
     ctx.beginPath();
     ctx.moveTo(pulsars[sequence[0]].x, pulsars[sequence[0]].y);
     for (let i = 1; i < replayIndex; i++) {
       ctx.lineTo(pulsars[sequence[i]].x, pulsars[sequence[i]].y);
     }
-    ctx.strokeStyle = roundClearWave > 0 ? "#f5d76e" : "rgba(126, 221, 181, 0.72)";
-    ctx.lineWidth = 2.8 + roundClearWave * 2;
-    ctx.shadowColor = roundClearWave > 0 ? "#f5d76e" : "#7eddb5";
-    ctx.shadowBlur = 12 + roundClearWave * 14;
+    const col = roundClearWave > 0 ? "rgba(245, 215, 110," : "rgba(126, 221, 181,";
+    ctx.strokeStyle = `${col} 0.24)`;
+    ctx.lineWidth = 7 + roundClearWave * 4;
     ctx.stroke();
-    ctx.shadowBlur = 0;
+
+    ctx.strokeStyle = `${col} 0.78)`;
+    ctx.lineWidth = 2.4;
+    ctx.stroke();
   }
 
-  // Travelling photon comets along constellation edges
+  // Travelling photon comets along constellation edges (zero shadowBlur)
   for (const bp of beamPulses) {
     const a = pulsars[bp.fromIdx];
     const b = pulsars[bp.toIdx];
     if (!a || !b) continue;
     const t = Math.min(1, bp.t);
-    const tailT = Math.max(0, t - 0.28);
+    const tailT = Math.max(0, t - 0.26);
     const x1 = a.x + (b.x - a.x) * tailT;
     const y1 = a.y + (b.y - a.y) * tailT;
     const x2 = a.x + (b.x - a.x) * t;
     const y2 = a.y + (b.y - a.y) * t;
 
-    const grad = ctx.createLinearGradient(x1, y1, x2, y2);
-    grad.addColorStop(0, "transparent");
-    grad.addColorStop(1, bp.color);
-    ctx.strokeStyle = grad;
-    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = bp.color;
+    ctx.globalAlpha = 0.75;
+    ctx.lineWidth = 2.4;
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.stroke();
 
+    ctx.fillStyle = bp.color;
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath();
+    ctx.arc(x2, y2, 7, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.fillStyle = "#ffffff";
-    ctx.shadowColor = bp.color;
-    ctx.shadowBlur = 12;
+    ctx.globalAlpha = 1;
     ctx.beginPath();
-    ctx.arc(x2, y2, 3.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-  }
-
-  ctx.restore();
-}
-
-function drawBgParticles(now) {
-  ctx.save();
-  for (const p of bgParticles) {
-    const alpha = 0.15 + Math.sin(now * 0.0015 + p.phase) * 0.12;
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = `hsla(${100 + Math.sin(p.phase) * 40}, 30%, 75%, 1)`;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.arc(x2, y2, 2.8, 0, Math.PI * 2);
     ctx.fill();
   }
+
   ctx.restore();
 }
 
 function drawPulsar(p, now) {
   // Strictly neutral during replay: energy depends ONLY on p.bloom and p.glow (never currentTarget)
-  const bloomScale = (1 + p.bloom * 0.36) * p.scale;
+  const bloomScale = (1 + p.bloom * 0.34) * p.scale;
   const wiltScale = p.wilt > 0 ? Math.max(0, 1 - p.wilt * 0.5) : 1;
-  const idleScale = 1 + Math.sin(now * 0.0022 + p.phase) * 0.045;
+  const idleScale = 1 + Math.sin(now * 0.0022 + p.phase) * 0.04;
   const energy = Math.max(p.bloom, p.glow);
   const isHovered = state === "replaying" && hoveredPulsarId === p.id;
-  const homeDim = state === "home" ? 0.62 : 1;
+  const homeDim = state === "home" ? 0.6 : 1;
 
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.scale(bloomScale * wiltScale * idleScale, bloomScale * wiltScale * idleScale);
 
-  const coronaRadius = p.radius * (1.72 + energy * 0.75);
-  const corona = ctx.createRadialGradient(0, 0, p.radius * 0.15, 0, 0, coronaRadius);
-  corona.addColorStop(0, p.color);
-  corona.addColorStop(0.25, `${p.color}66`);
-  corona.addColorStop(0.62, `${p.color}18`);
-  corona.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.globalAlpha = (p.wilt > 0 ? 0.12 : 0.4 + energy * 0.32) * homeDim;
-  ctx.globalCompositeOperation = "lighter";
-  ctx.fillStyle = corona;
-  ctx.beginPath();
-  ctx.arc(0, 0, coronaRadius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalCompositeOperation = "source-over";
+  // 1. Pre-rendered corona sprite (zero per-frame gradient allocation, zero shadowBlur)
+  if (p.sprite) {
+    const spriteR = p.radius * (1.85 + energy * 0.7);
+    ctx.globalAlpha = (p.wilt > 0 ? 0.14 : 0.52 + energy * 0.38) * homeDim;
+    ctx.globalCompositeOperation = "lighter";
+    ctx.drawImage(p.sprite, -spriteR, -spriteR, spriteR * 2, spriteR * 2);
+    ctx.globalCompositeOperation = "source-over";
+  }
 
-  for (let i = 0; i < 3; i++) {
-    const ringScale = 1 + i * 0.16;
+  // 2. Two counter-rotating orbital rings
+  for (let i = 0; i < 2; i++) {
+    const ringScale = 1 + i * 0.22;
     ctx.save();
-    ctx.rotate(now * (0.00038 + i * 0.0002) * (i % 2 ? -1 : 1) + p.haloSpin + i * 0.75);
-    ctx.globalAlpha = (p.wilt > 0 ? 0.08 : 0.22 + energy * 0.28) * homeDim;
-    ctx.strokeStyle = i === 1 ? "rgba(255,255,255,0.58)" : p.color;
-    ctx.lineWidth = Math.max(1, p.radius * (0.026 + i * 0.004));
+    ctx.rotate(now * (0.00042 + i * 0.0002) * (i % 2 ? -1 : 1) + p.haloSpin + i * 0.9);
+    ctx.globalAlpha = (p.wilt > 0 ? 0.08 : 0.25 + energy * 0.3) * homeDim;
+    ctx.strokeStyle = i === 1 ? "rgba(255,255,255,0.6)" : p.color;
+    ctx.lineWidth = 1.25;
     ctx.beginPath();
-    ctx.ellipse(0, 0, p.radius * 1.08 * ringScale, p.radius * 0.34 * ringScale, 0, 0.18, Math.PI * 1.72);
-    ctx.stroke();
-    ctx.globalAlpha *= 0.65;
-    ctx.beginPath();
-    ctx.ellipse(
-      0,
-      0,
-      p.radius * 1.08 * ringScale,
-      p.radius * 0.34 * ringScale,
-      0,
-      Math.PI + 0.1,
-      Math.PI * 1.42
-    );
+    ctx.ellipse(0, 0, p.radius * 1.1 * ringScale, p.radius * 0.35 * ringScale, 0, 0.2, Math.PI * 1.75);
     ctx.stroke();
     ctx.restore();
   }
-
-  ctx.save();
-  ctx.rotate(now * 0.00024 + p.haloSpin);
-  ctx.globalAlpha = (p.wilt > 0 ? 0.06 : 0.15 + energy * 0.14) * homeDim;
-  ctx.strokeStyle = p.color;
-  ctx.lineWidth = 1;
-  ctx.setLineDash([2, 9]);
-  ctx.beginPath();
-  ctx.ellipse(0, 0, p.radius * 1.42, p.radius * 0.52, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.restore();
 
   if (isHovered) {
     ctx.strokeStyle = "rgba(255,255,255,0.5)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(0, 0, p.radius * 1.18, 0, Math.PI * 2);
+    ctx.arc(0, 0, p.radius * 1.16, 0, Math.PI * 2);
     ctx.stroke();
   }
 
   if (p.bloom > 0) {
     ctx.strokeStyle = p.color;
-    ctx.lineWidth = 1.5 + p.bloom * 2.2;
-    ctx.globalAlpha = p.bloom * 0.72 * homeDim;
+    ctx.lineWidth = 1.5 + p.bloom * 2;
+    ctx.globalAlpha = p.bloom * 0.7 * homeDim;
     ctx.beginPath();
-    ctx.arc(0, 0, p.radius + 12 + (1 - p.bloom) * 52, 0, Math.PI * 2);
+    ctx.arc(0, 0, p.radius + 10 + (1 - p.bloom) * 44, 0, Math.PI * 2);
     ctx.stroke();
   }
 
-  for (let i = 0; i < 8; i++) {
-    const a = now * (0.0004 + i * 0.000045) * (i % 2 ? -1 : 1) + p.phase + i * 0.78;
-    const orbitX = p.radius * (0.86 + (i % 3) * 0.14);
-    const orbitY = p.radius * (0.34 + (i % 2) * 0.1);
-    const ox = Math.cos(a) * orbitX;
-    const oy = Math.sin(a) * orbitY;
-    const sparkle = 0.55 + Math.sin(now * 0.003 + i + p.phase) * 0.25;
-    ctx.globalAlpha = (p.wilt > 0 ? 0.12 : sparkle) * homeDim;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 6 + energy * 8;
-    ctx.fillStyle = i % 4 === 0 ? "#ffffff" : p.color;
+  // 3. 4 lightweight orbiting moons (no shadowBlur!)
+  ctx.fillStyle = "#ffffff";
+  for (let i = 0; i < 4; i++) {
+    const a = now * (0.00045 + i * 0.00006) * (i % 2 ? -1 : 1) + p.phase + i * 1.57;
+    const ox = Math.cos(a) * p.radius * (0.9 + (i % 2) * 0.16);
+    const oy = Math.sin(a) * p.radius * (0.36 + (i % 2) * 0.1);
+    ctx.globalAlpha = (p.wilt > 0 ? 0.12 : 0.65) * homeDim;
     ctx.beginPath();
-    ctx.arc(ox, oy, 1.1 + (i % 3) * 0.45 + energy * 0.7, 0, Math.PI * 2);
+    ctx.arc(ox, oy, 1.4 + energy * 0.6, 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.shadowBlur = 0;
 
-  ctx.globalAlpha = (p.wilt > 0 ? 0.4 : 1) * homeDim;
-  const coreRadius = p.radius * (0.34 + energy * 0.12) + Math.sin(now * 0.004 + p.id) * 1.2;
-  const centerGrad = ctx.createRadialGradient(
-    -coreRadius * 0.3,
-    -coreRadius * 0.35,
-    1,
-    0,
-    0,
-    coreRadius * 1.35
-  );
-  centerGrad.addColorStop(0, "#ffffff");
-  centerGrad.addColorStop(0.22, "#fff8dc");
-  centerGrad.addColorStop(0.48, p.color);
-  centerGrad.addColorStop(1, "rgba(0,0,0,0.58)");
-  ctx.fillStyle = centerGrad;
-  ctx.shadowColor = p.color;
-  ctx.shadowBlur = 14 + energy * 20;
+  // 4. Crisp 2-layer core (colored outer disc + white hot center — zero shadowBlur)
+  const coreRadius = p.radius * (0.34 + energy * 0.12);
+  ctx.globalAlpha = (p.wilt > 0 ? 0.35 : 0.92) * homeDim;
+  ctx.fillStyle = p.color;
   ctx.beginPath();
   ctx.arc(0, 0, coreRadius, 0, Math.PI * 2);
   ctx.fill();
-  ctx.shadowBlur = 0;
 
-  ctx.globalAlpha = (p.wilt > 0 ? 0.12 : 0.45 + energy * 0.2) * homeDim;
-  ctx.strokeStyle = "rgba(255,255,255,0.72)";
-  ctx.lineWidth = 1;
+  ctx.fillStyle = "#ffffff";
   ctx.beginPath();
-  ctx.arc(0, 0, coreRadius * 1.28, Math.PI * 1.08, Math.PI * 1.72);
-  ctx.stroke();
+  ctx.arc(-coreRadius * 0.18, -coreRadius * 0.18, coreRadius * 0.52, 0, Math.PI * 2);
+  ctx.fill();
 
   if (state !== "home") {
-    ctx.globalAlpha = p.wilt > 0 ? 0.2 : 0.7;
-    ctx.fillStyle = "#ffffff";
-    ctx.font = `700 ${Math.max(10, p.radius * 0.32)}px 'Outfit', system-ui`;
+    ctx.globalAlpha = p.wilt > 0 ? 0.2 : 0.75;
+    ctx.fillStyle = "#060b16";
+    ctx.font = `800 ${Math.max(10, p.radius * 0.32)}px 'Outfit', system-ui`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(String(p.id + 1), 0, 1);
@@ -1588,16 +1387,12 @@ function drawPowerUp(now) {
   ctx.translate(p.x, p.y);
   ctx.globalAlpha = alpha;
 
-  const aura = 28 + Math.sin(now * 0.005) * 5;
-  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, aura);
-  g.addColorStop(0, "rgba(245, 215, 110, 0.45)");
-  g.addColorStop(1, "transparent");
-  ctx.fillStyle = g;
+  ctx.fillStyle = "rgba(245, 215, 110, 0.22)";
   ctx.beginPath();
-  ctx.arc(0, 0, aura, 0, Math.PI * 2);
+  ctx.arc(0, 0, 26 + Math.sin(now * 0.005) * 4, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = "rgba(12, 18, 32, 0.85)";
+  ctx.fillStyle = "rgba(12, 18, 32, 0.9)";
   ctx.beginPath();
   ctx.arc(0, 0, 19, 0, Math.PI * 2);
   ctx.fill();
@@ -1627,40 +1422,20 @@ function drawReplayIndicators(now) {
     const p = pulsars[sequence[i]];
     ctx.globalAlpha = 0.65;
     ctx.fillStyle = "#7eddb5";
-    ctx.font = `800 ${p.radius * 0.52}px 'Outfit', system-ui`;
+    ctx.font = `800 ${p.radius * 0.5}px 'Outfit', system-ui`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("✓", p.x, p.y - p.radius - 12);
   }
 
   for (const p of pulsars) {
-    const pulse = Math.sin(now * 0.004 + p.id) * 0.06 + 0.1;
+    const pulse = Math.sin(now * 0.004 + p.id) * 0.05 + 0.09;
     ctx.globalAlpha = pulse;
     ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1.1;
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.radius + 8, 0, Math.PI * 2);
     ctx.stroke();
-  }
-
-  if (mode.replayTimeout !== Infinity) {
-    const elapsed = performance.now() - (replayDeadline - mode.replayTimeout);
-    const progress = Math.min(1, Math.max(0, elapsed / mode.replayTimeout));
-    if (progress > 0.6) {
-      const warn = (progress - 0.6) / 0.4;
-      ctx.globalAlpha = warn * 0.28;
-      ctx.strokeStyle = "#ff7b7b";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(
-        w / 2,
-        h / 2,
-        Math.min(w, h) * 0.45,
-        -Math.PI / 2,
-        -Math.PI / 2 + Math.PI * 2 * progress
-      );
-      ctx.stroke();
-    }
   }
 
   ctx.restore();
@@ -1669,13 +1444,13 @@ function drawReplayIndicators(now) {
 function drawCountdown(now) {
   if (state !== "countdown") return;
   const elapsed = (now - countdownStart) % 700;
-  const scale = 1 + (1 - elapsed / 700) * 0.5;
+  const scale = 1 + (1 - elapsed / 700) * 0.45;
   const alpha = 1 - elapsed / 700;
 
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = "#7eddb5";
-  ctx.font = `800 ${80 * scale}px 'Outfit', system-ui`;
+  ctx.font = `800 ${76 * scale}px 'Outfit', system-ui`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(Math.max(1, countdownValue), w / 2, h / 2);
@@ -1689,16 +1464,14 @@ function render(now) {
     ctx.translate(FX.shakeX, FX.shakeY);
   }
 
-  drawBackground(now);
-  drawGalaxyBand(now);
-  drawNebulae(now);
-  drawCosmicDust(now);
-  drawStars(now);
-  drawAurora(now);
-  drawShootingStars();
-  drawBgParticles(now);
+  // 1. Blit pre-rendered cosmic sky + nebulae + static stars + vignette in a single GPU drawImage call
+  ctx.drawImage(bgCacheCanvas, 0, 0, w, h);
 
-  // Apply smooth camera zoom & parallax to the constellation stage
+  // 2. Lightweight twinkling foreground stars & occasional shooting star
+  drawTwinkleStars(now);
+  drawShootingStars();
+
+  // 3. Apply smooth camera zoom & parallax to the constellation stage
   ctx.save();
   ctx.translate(w / 2 + camPanX, h / 2 + camPanY);
   ctx.scale(camZoom, camZoom);
@@ -1714,19 +1487,6 @@ function render(now) {
   ctx.restore();
 
   drawCountdown(now);
-
-  const vg = ctx.createRadialGradient(
-    w / 2,
-    h / 2,
-    Math.min(w, h) * 0.4,
-    w / 2,
-    h / 2,
-    Math.max(w, h) * 0.8
-  );
-  vg.addColorStop(0, "transparent");
-  vg.addColorStop(1, "rgba(0,0,0,0.42)");
-  ctx.fillStyle = vg;
-  ctx.fillRect(0, 0, w, h);
 
   ctx.restore();
 }

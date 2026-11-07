@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════
-   Lumina FX — Audio, Particles, Shake, Ripples
+   Lumina FX — High-FPS Audio, Particles, Shake, Ripples
    ═══════════════════════════════════════════ */
 
 const FX = (() => {
@@ -13,8 +13,9 @@ const FX = (() => {
   const MASTER_VOLUME = 1.65;
   const PENTATONIC = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33];
 
-  // ── Ripples ──
+  // ── Ripples (capped for 60fps) ──
   const ripples = [];
+  const MAX_RIPPLES = 16;
 
   // ── Screen Shake ──
   let shakeX = 0, shakeY = 0, shakeInt = 0;
@@ -160,15 +161,16 @@ const FX = (() => {
   // ── Multi-Ring Harmonic Ripples ──
   function spawnRipple(x, y, color, maxR, rings = 2) {
     for (let k = 0; k < rings; k++) {
+      if (ripples.length >= MAX_RIPPLES) ripples.shift();
       ripples.push({
         x,
         y,
         color,
         r: k * 6,
-        maxR: (maxR || 130) * (1 - k * 0.22),
-        alpha: 0.65 - k * 0.2,
-        speed: 240 - k * 45,
-        width: 2.2 - k * 0.7,
+        maxR: (maxR || 120) * (1 - k * 0.22),
+        alpha: 0.6 - k * 0.18,
+        speed: 230 - k * 40,
+        width: 2 - k * 0.6,
       });
     }
   }
@@ -178,12 +180,13 @@ const FX = (() => {
       const r = ripples[i];
       r.r += dt * (r.speed || 220);
       const prog = r.r / r.maxR;
-      r.alpha = Math.max(0, (1 - prog * prog) * 0.6);
+      r.alpha = Math.max(0, (1 - prog * prog) * 0.55);
       if (r.r >= r.maxR) ripples.splice(i, 1);
     }
   }
 
   function drawRipples(ctx) {
+    if (!ripples.length) return;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const r of ripples) {
@@ -197,14 +200,16 @@ const FX = (() => {
     ctx.restore();
   }
 
-  // ── Luminous Trail Particles ──
+  // ── Zero-ShadowBlur Fast Particles ──
   const particles = [];
+  const MAX_PARTICLES = 90;
 
   function spawn(x, y, color, count, opts = {}) {
     for (let i = 0; i < count; i++) {
+      if (particles.length >= MAX_PARTICLES) particles.shift();
       const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.55;
-      const speed = (opts.speed || 90) + Math.random() * (opts.speedVar || 110);
-      const life = (opts.life || 0.55) + Math.random() * (opts.lifeVar || 0.45);
+      const speed = (opts.speed || 90) + Math.random() * (opts.speedVar || 100);
+      const life = (opts.life || 0.48) + Math.random() * (opts.lifeVar || 0.35);
       particles.push({
         x,
         y,
@@ -213,10 +218,9 @@ const FX = (() => {
         color,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        size: (opts.size || 2) + Math.random() * (opts.sizeVar || 3.2),
+        size: (opts.size || 2) + Math.random() * (opts.sizeVar || 2.8),
         life,
         maxLife: life,
-        glow: opts.glow !== undefined ? opts.glow : true,
       });
     }
   }
@@ -224,9 +228,9 @@ const FX = (() => {
   function spawnCelebration(w, h) {
     const cx = w / 2, cy = h / 2;
     const cols = ['#ff7b7b', '#b8a9e8', '#f5d76e', '#7eddb5', '#ffb5c5', '#87ceeb', '#ffab76'];
-    for (let i = 0; i < 65; i++) {
-      spawn(cx + (Math.random() - 0.5) * 120, cy + (Math.random() - 0.5) * 70,
-        cols[i % 7], 1, { speed: 140, speedVar: 220, size: 2.2, sizeVar: 3.8, life: 0.85, lifeVar: 0.6, glow: true });
+    for (let i = 0; i < 36; i++) {
+      spawn(cx + (Math.random() - 0.5) * 100, cy + (Math.random() - 0.5) * 60,
+        cols[i % 7], 1, { speed: 130, speedVar: 190, size: 2.2, sizeVar: 3.2, life: 0.7, lifeVar: 0.45 });
     }
   }
 
@@ -238,35 +242,32 @@ const FX = (() => {
       p.life -= dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      p.vy += 28 * dt;
-      p.vx *= 0.965;
-      p.vy *= 0.965;
+      p.vy += 26 * dt;
+      p.vx *= 0.96;
+      p.vy *= 0.96;
       if (p.life <= 0) particles.splice(i, 1);
     }
   }
 
   function drawParticles(ctx) {
+    if (!particles.length) return;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const p of particles) {
       const t = Math.max(0, p.life / p.maxLife);
+      const r = p.size * t;
       ctx.globalAlpha = t;
       ctx.strokeStyle = p.color;
-      ctx.lineWidth = Math.max(1, p.size * t * 0.75);
+      ctx.lineWidth = Math.max(1, r * 0.8);
       ctx.beginPath();
       ctx.moveTo(p.prevX, p.prevY);
       ctx.lineTo(p.x, p.y);
       ctx.stroke();
 
-      if (p.glow) {
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = 8;
-      }
       ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * t, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.shadowBlur = 0;
     }
     ctx.restore();
   }
