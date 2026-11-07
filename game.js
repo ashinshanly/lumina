@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   Lumina — Rhythm-Spatial Cosmic Memory Game
+   Lumina — Minimal Rhythm-Spatial Cosmic Memory Game
    ═══════════════════════════════════════════════════════ */
 
 const canvas = document.getElementById("garden");
@@ -14,6 +14,7 @@ const els = {
   round: document.getElementById("roundVal"),
   score: document.getElementById("scoreVal"),
   combo: document.getElementById("comboVal"),
+  comboPill: document.getElementById("comboPill"),
   shields: document.getElementById("shields"),
   phase: document.getElementById("phaseLabel"),
   msg: document.getElementById("phaseMsg"),
@@ -26,6 +27,7 @@ const els = {
   resultText: document.getElementById("resultText"),
   resultIcon: document.getElementById("resultIcon"),
   resultRank: document.getElementById("resultRank"),
+  resultScoreBig: document.getElementById("resultScoreBig"),
   rPerfect: document.getElementById("rPerfect"),
   rGood: document.getElementById("rGood"),
   rAccuracy: document.getElementById("rAccuracy"),
@@ -41,6 +43,9 @@ const els = {
   powerUpNotif: document.getElementById("powerUpNotif"),
   soundToggle: document.getElementById("soundToggle"),
   bestDisplay: document.getElementById("bestDisplay"),
+  leaderboardToggle: document.getElementById("leaderboardToggle"),
+  leaderboardModal: document.getElementById("leaderboardModal"),
+  leaderboardClose: document.getElementById("leaderboardClose"),
   homeLeaderboardSpeed: document.getElementById("homeLeaderboardSpeed"),
   homeLeaderboardEndless: document.getElementById("homeLeaderboardEndless"),
   resultLeaderboard: document.getElementById("resultLeaderboard"),
@@ -93,26 +98,26 @@ const POWER_UPS = [
   {
     id: "freeze",
     symbol: "❄",
-    icon: '<svg style="display:inline-block; vertical-align:middle; width: 1.2em; height: 1.2em;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M2 12h20"/><path d="m4.93 4.93 14.14 14.14"/><path d="m19.07 4.93-14.14 14.14"/></svg>',
-    name: "Time Freeze",
+    icon: "❄",
+    name: "+Time",
   },
   {
     id: "shield",
     symbol: "🛡",
-    icon: '<svg style="display:inline-block; vertical-align:middle; width: 1.2em; height: 1.2em;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>',
-    name: "Shield Restore",
+    icon: "🛡",
+    name: "+Shield",
   },
   {
     id: "double",
     symbol: "⚡",
-    icon: '<svg style="display:inline-block; vertical-align:middle; width: 1.2em; height: 1.2em;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>',
-    name: "Double Points",
+    icon: "⚡",
+    name: "2× Score",
   },
   {
     id: "slow",
     symbol: "☾",
-    icon: '<svg style="display:inline-block; vertical-align:middle; width: 1.2em; height: 1.2em;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
-    name: "Slow Motion",
+    icon: "☾",
+    name: "Slow",
   },
 ];
 
@@ -127,9 +132,17 @@ let shootingStars = [];
 let nebulaSeeds = [];
 let cosmicDust = [];
 let galaxyBands = [];
+let beamPulses = []; // Travelling photon comets along constellation lines
+let roundClearWave = 0; // 0..1 resonance wave on round clear
+let nextAmbientBeamAt = 0;
 let activePowerUpDrop = null;
 let activeEffects = { doublePoints: false, slowMotion: false };
 let activeTimers = [];
+
+// Smooth camera state
+let camZoom = 0.94;
+let camPanX = 0;
+let camPanY = 0;
 
 let score = 0;
 let combo = 0;
@@ -185,6 +198,8 @@ function resize() {
   const rect = canvas.getBoundingClientRect();
   w = rect.width;
   h = rect.height;
+  mouseX = w / 2;
+  mouseY = h / 2;
   canvas.width = Math.round(w * DPR);
   canvas.height = Math.round(h * DPR);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -197,9 +212,11 @@ function resize() {
 }
 
 function updatePulsarPositions() {
-  const baseRadius = Math.min(w, h) * 0.055;
+  const baseRadius = Math.min(w, h) * 0.056;
   pulsars = PULSAR_POSITIONS.map((fp, i) => ({
     id: i,
+    baseX: fp.px * w,
+    baseY: fp.py * h,
     x: fp.px * w,
     y: fp.py * h,
     color: COLORS[i],
@@ -211,30 +228,31 @@ function updatePulsarPositions() {
     wilt: 0,
     glow: 0,
     scale: 1,
-    phase: Math.random() * Math.PI * 2,
+    scaleVel: 0,
+    phase: (i * Math.PI * 2) / 7 + 0.4,
   }));
 }
 
 function initBgParticles() {
-  const count = Math.floor((w * h) / 12000);
+  const count = Math.floor((w * h) / 11000);
   bgParticles = Array.from({ length: count }, () => ({
     x: Math.random() * w,
     y: Math.random() * h,
-    size: 1 + Math.random() * 2.5,
-    speed: 0.15 + Math.random() * 0.35,
+    size: 1 + Math.random() * 2.4,
+    speed: 0.16 + Math.random() * 0.36,
     phase: Math.random() * Math.PI * 2,
     drift: (Math.random() - 0.5) * 0.3,
   }));
 }
 
 function initStars() {
-  const count = Math.floor((w * h) / 2800);
+  const count = Math.floor((w * h) / 2600);
   stars = Array.from({ length: count }, () => ({
     x: Math.random() * w,
     y: Math.random() * h,
     size: 0.3 + Math.random() * 1.8,
     phase: Math.random() * Math.PI * 2,
-    speed: 0.5 + Math.random() * 1.5,
+    speed: 0.5 + Math.random() * 1.6,
     hue: Math.random() > 0.7 ? 200 + Math.random() * 60 : 30 + Math.random() * 30,
   }));
 }
@@ -243,8 +261,8 @@ function initNebulae() {
   nebulaSeeds = Array.from({ length: 5 }, () => ({
     x: Math.random() * w,
     y: Math.random() * h,
-    rx: 80 + Math.random() * 260,
-    ry: 60 + Math.random() * 180,
+    rx: 90 + Math.random() * 260,
+    ry: 65 + Math.random() * 180,
     hue: [260, 320, 200, 170, 30][Math.floor(Math.random() * 5)],
     alpha: 0.025 + Math.random() * 0.035,
     drift: (Math.random() - 0.5) * 0.08,
@@ -280,11 +298,23 @@ function spawnShootingStar() {
   shootingStars.push({
     x: Math.random() * w * 0.8,
     y: Math.random() * h * 0.3,
-    vx: 3 + Math.random() * 4,
+    vx: 3.2 + Math.random() * 4.2,
     vy: 1.5 + Math.random() * 2.5,
-    life: 0.6 + Math.random() * 0.5,
-    maxLife: 0.6 + Math.random() * 0.5,
-    length: 40 + Math.random() * 80,
+    life: 0.65 + Math.random() * 0.5,
+    maxLife: 0.65 + Math.random() * 0.5,
+    length: 45 + Math.random() * 85,
+  });
+}
+
+function spawnBeamPulse(fromIdx, toIdx, color, speed = 2.6, triggerBloomOnArrive = false) {
+  if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+  beamPulses.push({
+    fromIdx,
+    toIdx,
+    color: color || "#7eddb5",
+    t: 0,
+    speed,
+    triggerBloomOnArrive,
   });
 }
 
@@ -295,6 +325,7 @@ function startGame(selectedMode) {
   mode = MODES[modeId];
   els.modeBadge.textContent = mode.name;
 
+  if (els.leaderboardModal) els.leaderboardModal.classList.add("hidden");
   els.home.classList.add("hidden");
   els.result.classList.add("hidden");
   els.hud.classList.remove("hidden");
@@ -313,6 +344,8 @@ function startGame(selectedMode) {
   misses = 0;
   currentTarget = -1;
   sequence = [];
+  beamPulses = [];
+  roundClearWave = 0;
   activePowerUpDrop = null;
   activeEffects = { doublePoints: false, slowMotion: false };
   FX.particles.length = 0;
@@ -320,6 +353,8 @@ function startGame(selectedMode) {
     p.glow = 0;
     p.bloom = 0;
     p.wilt = 0;
+    p.scale = 1;
+    p.scaleVel = 0;
   }
 
   if (lives === Infinity) {
@@ -328,7 +363,7 @@ function startGame(selectedMode) {
     els.shields.style.display = "flex";
     els.shields.innerHTML = Array(lives)
       .fill(
-        '<span class="shield-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg></span>'
+        '<span class="shield-icon"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L4 7v6c0 5.2 3.4 9.9 8 11 4.6-1.1 8-5.8 8-11V7l-8-5z"/></svg></span>'
       )
       .join("");
   }
@@ -348,11 +383,15 @@ function returnToHome() {
   clearAllTimers();
   state = "home";
   currentTarget = -1;
+  beamPulses = [];
+  roundClearWave = 0;
   activePowerUpDrop = null;
   for (const p of pulsars) {
     p.glow = 0;
     p.bloom = 0;
     p.wilt = 0;
+    p.scale = 1;
+    p.scaleVel = 0;
   }
   FX.stopAmbient();
   els.hud.classList.add("hidden");
@@ -368,8 +407,7 @@ function startCountdown() {
   state = "countdown";
   countdownValue = 3;
   countdownStart = performance.now();
-  els.phase.textContent = "Get Ready";
-  els.msg.textContent = `${mode.name} Mode`;
+  setPhase("READY", "");
   if (els.seqDots) els.seqDots.innerHTML = "";
 }
 
@@ -398,25 +436,31 @@ function startNextRound() {
   watchIndex = 0;
   replayIndex = 0;
   currentTarget = -1;
+  beamPulses = [];
   for (const p of pulsars) {
     p.glow = 0;
     p.bloom = 0;
     p.wilt = 0;
   }
 
-  setPhase(`Round ${round}`, `Watch the sequence — ${seqLen} pulsars`);
+  setPhase("WATCH", "");
   renderSeqDots();
   updateHUD();
   els.progressBar.classList.remove("hidden");
   els.progressFill.style.width = "0%";
   if (els.timerBar) els.timerBar.classList.add("hidden");
 
-  scheduleTimer(() => startWatchPhase(), 800);
+  scheduleTimer(() => startWatchPhase(), 750);
 }
 
-function setPhase(label, msg) {
-  els.phase.textContent = label;
-  els.msg.textContent = msg;
+function setPhase(label, msg = "") {
+  if (els.phase.textContent !== label) {
+    els.phase.textContent = label;
+    els.phase.classList.remove("phase-pop");
+    void els.phase.offsetWidth;
+    els.phase.classList.add("phase-pop");
+  }
+  if (els.msg) els.msg.textContent = msg;
 }
 
 function renderSeqDots() {
@@ -440,12 +484,14 @@ function startWatchPhase() {
   watchIndex = 0;
   replayIndex = 0;
   currentTarget = -1;
+  beamPulses = [];
   if (els.timerBar) els.timerBar.classList.add("hidden");
   for (const p of pulsars) {
     p.glow = 0;
     p.bloom = 0;
     p.wilt = 0;
   }
+  setPhase("WATCH", "");
   renderSeqDots();
   showWatchPulsar();
 }
@@ -455,13 +501,20 @@ function showWatchPulsar() {
     scheduleTimer(() => startReplayPhase(), 650);
     return;
   }
-  const pulsar = pulsars[sequence[watchIndex]];
+  const currIdx = sequence[watchIndex];
+  const pulsar = pulsars[currIdx];
   pulsar.glow = 1;
-  pulsar.bloom = 0.72;
+  pulsar.bloom = 0.78;
+  pulsar.scaleVel = 3.2;
 
-  FX.playPulsarTone(sequence[watchIndex]);
+  if (watchIndex > 0) {
+    spawnBeamPulse(sequence[watchIndex - 1], currIdx, pulsar.color, 3.4);
+  }
+
+  FX.playPulsarTone(currIdx);
   FX.playBeat();
-  FX.spawn(pulsar.x, pulsar.y, pulsar.color, 6);
+  FX.spawn(pulsar.x, pulsar.y, pulsar.color, 8, { speed: 110 });
+  FX.spawnRipple(pulsar.x, pulsar.y, pulsar.color, 110, 2);
 
   watchIndex++;
   renderSeqDots();
@@ -476,18 +529,21 @@ function showWatchPulsar() {
 }
 
 function startReplayPhase() {
-  // Ensure zero residual glow/bloom from watch phase so no pulsar hints the answer
+  // Strictly clear all glow/bloom/scale from watch phase so no pulsar hints the answer
   for (const p of pulsars) {
     p.glow = 0;
     p.bloom = 0;
     p.wilt = 0;
+    p.scale = 1;
+    p.scaleVel = 0;
   }
+  beamPulses = [];
   state = "replaying";
   replayIndex = 0;
   currentTarget = sequence[0];
   replayDeadline =
     mode.replayTimeout === Infinity ? Infinity : performance.now() + mode.replayTimeout;
-  setPhase("Your turn", `Reconstruct the constellation — 0/${sequence.length}`);
+  setPhase("REPLAY", "");
   els.progressFill.style.width = "0%";
   if (els.timerBar) {
     if (mode.replayTimeout === Infinity) els.timerBar.classList.add("hidden");
@@ -512,6 +568,12 @@ function spawnPowerUpDrop() {
 function handleCorrectTap(pulsar, speed) {
   pulsar.bloom = 1;
   pulsar.glow = 0;
+  pulsar.scaleVel = 4.2;
+
+  if (replayIndex > 0) {
+    spawnBeamPulse(sequence[replayIndex - 1], pulsar.id, "#7eddb5", 4.0);
+  }
+
   replayIndex++;
   currentTarget = sequence[replayIndex] ?? -1;
 
@@ -523,18 +585,18 @@ function handleCorrectTap(pulsar, speed) {
     perfects++;
     combo++;
     pts = Math.round((120 + round * 20) * (1 + combo * 0.1));
-    showFeedback("Perfect!", "perfect");
+    showFeedback("✦ PERFECT", "perfect");
     FX.playPerfect(pulsar.id);
-    FX.spawn(pulsar.x, pulsar.y, pulsar.color, 18, { speed: 150 });
-    FX.spawnRipple(pulsar.x, pulsar.y, pulsar.color, 180);
+    FX.spawn(pulsar.x, pulsar.y, pulsar.color, 20, { speed: 165 });
+    FX.spawnRipple(pulsar.x, pulsar.y, pulsar.color, 185, 2);
   } else {
     goods++;
     combo++;
     pts = Math.round((60 + round * 10) * (1 + combo * 0.05));
-    showFeedback("Good", "good");
+    showFeedback("GOOD", "good");
     FX.playGood(pulsar.id);
-    FX.spawn(pulsar.x, pulsar.y, pulsar.color, 8);
-    FX.spawnRipple(pulsar.x, pulsar.y, pulsar.color, 100);
+    FX.spawn(pulsar.x, pulsar.y, pulsar.color, 10);
+    FX.spawnRipple(pulsar.x, pulsar.y, pulsar.color, 115, 1);
   }
 
   if (activeEffects.doublePoints) pts *= 2;
@@ -542,9 +604,8 @@ function handleCorrectTap(pulsar, speed) {
   maxCombo = Math.max(maxCombo, combo);
 
   FX.playComboChime(combo);
-  if (combo >= 3) FX.shake(combo >= 5 ? 4 : 2);
+  if (combo >= 3) FX.shake(combo >= 5 ? 3.5 : 1.8);
 
-  setPhase("Your turn", `${replayIndex}/${sequence.length}`);
   updateHUD();
 
   if (replayIndex >= sequence.length) {
@@ -557,6 +618,7 @@ function handleCorrectTap(pulsar, speed) {
 function handleRoundClear() {
   state = "between";
   currentTarget = -1;
+  roundClearWave = 1;
   if (els.timerBar) els.timerBar.classList.add("hidden");
 
   const bonus = lives === mode.lives && lives !== Infinity ? 200 : 0;
@@ -565,14 +627,11 @@ function handleRoundClear() {
   combo++;
   maxCombo = Math.max(maxCombo, combo);
 
+  setPhase("SYNCED", "");
   FX.playRoundClear();
   FX.spawnCelebration(w, h);
-  showFeedback(
-    bonus > 0
-      ? 'Flawless! <svg style="display:inline-block; vertical-align:middle; margin-left: 4px;" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>'
-      : "Round Clear!",
-    "perfect"
-  );
+  FX.spawnRipple(w / 2, h / 2, "#7eddb5", Math.min(w, h) * 0.45, 3);
+  showFeedback(bonus > 0 ? "✦ FLAWLESS" : "✦ SYNCED", "perfect");
 
   activeEffects.doublePoints = false;
   activeEffects.slowMotion = false;
@@ -582,7 +641,7 @@ function handleRoundClear() {
 
   scheduleTimer(() => {
     if (state === "between") startNextRound();
-  }, 1450);
+  }, 1350);
 }
 
 function handleWrongTap(pulsar) {
@@ -591,13 +650,16 @@ function handleWrongTap(pulsar) {
   currentTarget = -1;
   if (lives !== Infinity) lives--;
 
-  if (pulsar) pulsar.wilt = 1;
+  if (pulsar) {
+    pulsar.wilt = 1;
+    pulsar.scaleVel = -2.8;
+  }
   if (els.timerBar) els.timerBar.classList.add("hidden");
 
-  showFeedback("Drifted", "miss");
+  showFeedback("✕ MISS", "miss");
   FX.playMiss();
   FX.shake(6);
-  FX.spawnRipple(pulsar ? pulsar.x : mouseX, pulsar ? pulsar.y : mouseY, "#ff7b7b", 200);
+  FX.spawnRipple(pulsar ? pulsar.x : mouseX, pulsar ? pulsar.y : mouseY, "#ff7b7b", 190, 2);
 
   updateHUD();
   updateShields();
@@ -607,10 +669,10 @@ function handleWrongTap(pulsar) {
     return;
   }
 
-  setPhase("Watch again", "Re-aligning the constellation...");
+  setPhase("WATCH", "");
   state = "watching";
   els.progressFill.style.width = "0%";
-  scheduleTimer(() => startWatchPhase(), 850);
+  scheduleTimer(() => startWatchPhase(), 800);
 }
 
 function handleTimeout() {
@@ -620,7 +682,7 @@ function handleTimeout() {
   if (lives !== Infinity) lives--;
   if (els.timerBar) els.timerBar.classList.add("hidden");
 
-  showFeedback("Window Closed", "miss");
+  showFeedback("✕ LATE", "miss");
   FX.playMiss();
   FX.shake(4);
 
@@ -632,17 +694,15 @@ function handleTimeout() {
     return;
   }
 
-  setPhase("Watch again", "Re-aligning the constellation...");
+  setPhase("WATCH", "");
   state = "watching";
   els.progressFill.style.width = "0%";
-  scheduleTimer(() => startWatchPhase(), 850);
+  scheduleTimer(() => startWatchPhase(), 800);
 }
 
 function activatePowerUp(p) {
   FX.playPowerUp();
-  showPowerUpNotif(
-    `${p.icon} <span style="display:inline-block; vertical-align:middle; margin-left: 4px;">${p.name}!</span>`
-  );
+  showPowerUpNotif(`${p.symbol} ${p.name}`);
 
   if (p.id === "freeze") {
     if (mode.replayTimeout !== Infinity) replayDeadline += 5000;
@@ -657,8 +717,22 @@ function activatePowerUp(p) {
     activeEffects.slowMotion = true;
   }
 
-  FX.spawn(p.x, p.y, "#f5d76e", 30, { speed: 200, life: 1, glow: true });
+  FX.spawn(p.x, p.y, "#f5d76e", 28, { speed: 200, life: 1, glow: true });
+  FX.spawnRipple(p.x, p.y, "#f5d76e", 140, 2);
   activePowerUpDrop = null;
+}
+
+function animateScoreCounter(el, targetScore) {
+  if (!el) return;
+  const start = performance.now();
+  const dur = 680;
+  function tick(now) {
+    const t = Math.min(1, (now - start) / dur);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = Math.round(targetScore * eased).toLocaleString();
+    if (t < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
 }
 
 function endGame(won) {
@@ -689,20 +763,20 @@ function endGame(won) {
   else if (accuracy >= 78 && round >= 3) rank = "A";
   else if (accuracy >= 60) rank = "B";
 
-  els.resultIcon.innerHTML = won
-    ? '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>'
-    : '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
   if (els.resultRank) els.resultRank.textContent = rank;
-  els.resultTitle.textContent = won ? "Constellation Formed" : "Signal Faded";
-  els.resultText.textContent = `Reached Round ${round} with ${score.toLocaleString()} pts${
-    isNewBest ? " — New Personal Best!" : ` · Best: ${(bestScores[modeId] || 0).toLocaleString()}`
-  }`;
+  els.resultTitle.textContent = won ? "Constellation Synced" : `Round ${round}`;
+  els.resultText.textContent = isNewBest
+    ? "★ New Best"
+    : `Best ${(bestScores[modeId] || 0).toLocaleString()}`;
   els.rPerfect.textContent = perfects;
-  els.rGood.textContent = goods;
+  if (els.rGood) els.rGood.textContent = goods;
   if (els.rAccuracy) els.rAccuracy.textContent = `${accuracy}%`;
   els.rCombo.textContent = `x${maxCombo}`;
 
-  scheduleTimer(() => els.result.classList.remove("hidden"), 650);
+  scheduleTimer(() => {
+    els.result.classList.remove("hidden");
+    animateScoreCounter(els.resultScoreBig, score);
+  }, 500);
 }
 
 // ── UI Helpers ──
@@ -711,18 +785,19 @@ function updateHUD() {
   if (currentScore !== score) {
     els.score.textContent = score;
     els.score.classList.add("bump");
-    setTimeout(() => els.score.classList.remove("bump"), 150);
+    setTimeout(() => els.score.classList.remove("bump"), 160);
   }
 
   els.combo.textContent = `x${combo}`;
   els.round.textContent = round;
 
+  if (els.comboPill) {
+    els.comboPill.style.opacity = combo > 0 ? "1" : "0.45";
+    els.comboPill.style.transform = combo >= 3 ? "scale(1.06)" : "scale(1)";
+  }
+
   const comboPerc = Math.min(100, (combo / 10) * 100);
   els.comboFill.style.width = `${comboPerc}%`;
-  if (combo > 0 && combo % 5 === 0) {
-    els.comboFill.classList.add("pulse");
-    setTimeout(() => els.comboFill.classList.remove("pulse"), 400);
-  }
 }
 
 function updateShields() {
@@ -736,18 +811,18 @@ function updateShields() {
 
 function showFeedback(text, type) {
   clearTimeout(feedbackTimer);
-  els.feedback.innerHTML = text;
+  els.feedback.textContent = text;
   els.feedback.className = `feedback ${type} show`;
   feedbackTimer = setTimeout(() => {
     els.feedback.classList.remove("show");
     els.feedback.classList.add("hidden");
-  }, 650);
+  }, 620);
 }
 
 function showPowerUpNotif(text) {
-  els.powerUpNotif.innerHTML = text;
+  els.powerUpNotif.textContent = text;
   els.powerUpNotif.classList.remove("hidden");
-  setTimeout(() => els.powerUpNotif.classList.add("hidden"), 2000);
+  setTimeout(() => els.powerUpNotif.classList.add("hidden"), 1700);
 }
 
 function saveLeaderboardEntry(won) {
@@ -778,16 +853,11 @@ function formatScore(value) {
   return Number(value || 0).toLocaleString();
 }
 
-function formatRunDate(timestamp) {
-  if (!timestamp) return "Just now";
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(timestamp));
-}
-
 function renderLeaderboardList(listEl, entries, activeId = null) {
   if (!listEl) return;
 
   if (!entries || entries.length === 0) {
-    listEl.innerHTML = '<li class="leaderboard-empty">No scores yet</li>';
+    listEl.innerHTML = '<li class="leaderboard-empty">—</li>';
     return;
   }
 
@@ -798,9 +868,8 @@ function renderLeaderboardList(listEl, entries, activeId = null) {
       <span class="leaderboard-rank">${index + 1}</span>
       <span class="leaderboard-main">
         <strong>${formatScore(entry.score)}</strong>
-        <em>Round ${entry.round} · x${entry.combo}</em>
+        <em>R${entry.round} · x${entry.combo}</em>
       </span>
-      <span class="leaderboard-date">${formatRunDate(entry.createdAt)}</span>
     </li>
   `
     )
@@ -811,18 +880,17 @@ function renderLeaderboards(activeId = null) {
   renderLeaderboardList(els.homeLeaderboardSpeed, leaderboards.speed, activeId);
   renderLeaderboardList(els.homeLeaderboardEndless, leaderboards.endless, activeId);
   renderLeaderboardList(els.resultLeaderboard, leaderboards[modeId], activeId);
-  if (els.resultLeaderboardTitle && MODES[modeId]) {
-    els.resultLeaderboardTitle.textContent = `${MODES[modeId].name} Leaderboard`;
-  }
 }
 
 function updateBestDisplay(activeId = null) {
   const highest = Math.max(0, bestScores.speed || 0, bestScores.endless || 0, bestScores.zen || 0);
-  els.bestDisplay.textContent = `★ Highest Constellation Score: ${highest.toLocaleString()}`;
+  if (els.bestDisplay) {
+    els.bestDisplay.textContent = highest.toLocaleString();
+  }
   ["speed", "endless", "zen"].forEach((key) => {
     const badge = document.getElementById(`best-${key}`);
     if (badge) {
-      badge.textContent = `Best: ${(bestScores[key] || 0).toLocaleString()}`;
+      badge.textContent = `★ ${(bestScores[key] || 0).toLocaleString()}`;
     }
   });
   renderLeaderboards(activeId);
@@ -868,7 +936,7 @@ function onTap(e) {
 
   // Visual tap feedback everywhere
   if (state === "replaying" || state === "watching" || state === "between") {
-    FX.spawnRipple(pt.x, pt.y, "rgba(255,255,255,0.28)", 60);
+    FX.spawnRipple(pt.x, pt.y, "rgba(255,255,255,0.25)", 55, 1);
   }
 
   if (state !== "replaying") return;
@@ -892,9 +960,15 @@ function onTap(e) {
 canvas.addEventListener("pointerdown", onTap);
 
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && state !== "home") {
-    returnToHome();
-    return;
+  if (e.key === "Escape") {
+    if (els.leaderboardModal && !els.leaderboardModal.classList.contains("hidden")) {
+      els.leaderboardModal.classList.add("hidden");
+      return;
+    }
+    if (state !== "home") {
+      returnToHome();
+      return;
+    }
   }
   if (state !== "replaying") return;
   const num = Number(e.key);
@@ -929,11 +1003,29 @@ if (els.hudHomeBtn) {
   els.hudHomeBtn.addEventListener("click", returnToHome);
 }
 
+if (els.leaderboardToggle && els.leaderboardModal) {
+  els.leaderboardToggle.addEventListener("click", () => {
+    els.leaderboardModal.classList.remove("hidden");
+  });
+}
+if (els.leaderboardClose && els.leaderboardModal) {
+  els.leaderboardClose.addEventListener("click", () => {
+    els.leaderboardModal.classList.add("hidden");
+  });
+}
+if (els.leaderboardModal) {
+  els.leaderboardModal.addEventListener("click", (e) => {
+    if (e.target === els.leaderboardModal) {
+      els.leaderboardModal.classList.add("hidden");
+    }
+  });
+}
+
 els.soundToggle.addEventListener("click", () => {
   FX.soundEnabled = !FX.soundEnabled;
   els.soundToggle.innerHTML = FX.soundEnabled
-    ? '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>'
-    : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" x2="17" y1="9" y2="15"/><line x1="17" x2="23" y1="9" y2="15"/></svg>';
+    ? '<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>'
+    : '<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" x2="17" y1="9" y2="15"/><line x1="17" x2="23" y1="9" y2="15"/></svg>';
   if (FX.soundEnabled && state !== "home" && state !== "ended") FX.startAmbient();
   else FX.stopAmbient();
 });
@@ -944,20 +1036,71 @@ function update(dt, now) {
   FX.updateRipples(dt);
   FX.updateParticles(dt);
 
+  // Smooth camera zoom & parallax interpolation
+  const targetZoom =
+    state === "home"
+      ? 0.94
+      : state === "watching"
+      ? 1.03
+      : state === "between"
+      ? 1.05
+      : 1.0;
+  camZoom += (targetZoom - camZoom) * Math.min(1, dt * 4.5);
+
+  const targetPanX = ((mouseX || w / 2) - w / 2) * -0.015;
+  const targetPanY = ((mouseY || h / 2) - h / 2) * -0.015;
+  camPanX += (targetPanX - camPanX) * Math.min(1, dt * 5);
+  camPanY += (targetPanY - camPanY) * Math.min(1, dt * 5);
+
+  if (roundClearWave > 0) {
+    roundClearWave = Math.max(0, roundClearWave - dt * 0.9);
+  }
+
+  // Autonomous ambient constellation beams on Home screen
+  if (state === "home" && pulsars.length === 7 && now > nextAmbientBeamAt) {
+    const a = Math.floor(Math.random() * pulsars.length);
+    const b = (a + 1 + Math.floor(Math.random() * (pulsars.length - 1))) % pulsars.length;
+    spawnBeamPulse(a, b, pulsars[b].color, 1.4, true);
+    nextAmbientBeamAt = now + 900 + Math.random() * 900;
+  }
+
+  // Update travelling photon beams
+  for (let i = beamPulses.length - 1; i >= 0; i--) {
+    const bp = beamPulses[i];
+    bp.t += dt * bp.speed;
+    if (bp.t >= 1) {
+      if (bp.triggerBloomOnArrive && state === "home" && pulsars[bp.toIdx]) {
+        pulsars[bp.toIdx].bloom = 0.55;
+        pulsars[bp.toIdx].scaleVel = 1.6;
+      }
+      beamPulses.splice(i, 1);
+    }
+  }
+
+  // Zero-G Pulsar Drift + Spring Physics
   for (const p of pulsars) {
-    p.bloom = Math.max(0, p.bloom - dt * 1.4);
+    const driftRadius = state === "home" ? 7 : 3.5;
+    p.x = p.baseX + Math.sin(now * 0.0011 + p.phase) * driftRadius;
+    p.y = p.baseY + Math.cos(now * 0.0014 + p.phase * 1.3) * driftRadius;
+
+    // Elastic spring for p.scale
+    const springForce = (1 - p.scale) * 38;
+    p.scaleVel = (p.scaleVel + springForce * dt) * Math.pow(0.08, dt);
+    p.scale = Math.max(0.7, Math.min(1.45, p.scale + p.scaleVel * dt));
+
+    p.bloom = Math.max(0, p.bloom - dt * 1.5);
     p.wilt = Math.max(0, p.wilt - dt * 1.8);
     // Always decay glow uniformly — never hold glow on currentTarget
     if (p.glow > 0) p.glow = Math.max(0, p.glow - dt * 2.5);
 
     // Combo fire for last tapped pulsar only
     if (combo >= 5 && state === "replaying" && replayIndex > 0 && p.id === sequence[replayIndex - 1]) {
-      if (Math.random() < 0.2) {
+      if (Math.random() < 0.22) {
         const a = Math.random() * Math.PI * 2;
         const r = p.radius + 10;
         FX.spawn(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, p.color, 1, {
-          speed: 20,
-          size: 1.5,
+          speed: 24,
+          size: 1.6,
           life: 0.4,
         });
       }
@@ -991,7 +1134,7 @@ function update(dt, now) {
   }
 
   // Shooting stars
-  if (Math.random() < 0.003) spawnShootingStar();
+  if (Math.random() < 0.004) spawnShootingStar();
   for (let i = shootingStars.length - 1; i >= 0; i--) {
     const s = shootingStars[i];
     s.life -= dt;
@@ -1029,7 +1172,7 @@ function update(dt, now) {
   // Countdown
   if (state === "countdown") {
     const elapsed = now - countdownStart;
-    countdownValue = 3 - Math.floor(elapsed / 800);
+    countdownValue = 3 - Math.floor(elapsed / 700);
     if (countdownValue <= 0) {
       state = "between";
       beginPlaying();
@@ -1119,8 +1262,8 @@ function drawCosmicDust(now) {
 
 function drawStars(now) {
   ctx.save();
-  const px = (mouseX - w / 2) * 0.02;
-  const py = (mouseY - h / 2) * 0.02;
+  const px = (mouseX - w / 2) * 0.022;
+  const py = (mouseY - h / 2) * 0.022;
   ctx.translate(-px, -py);
 
   for (const s of stars) {
@@ -1154,7 +1297,7 @@ function drawShootingStars() {
     const tailY = s.y - s.vy * s.length * 0.15;
     const grad = ctx.createLinearGradient(tailX, tailY, s.x, s.y);
     grad.addColorStop(0, "transparent");
-    grad.addColorStop(1, `rgba(220, 230, 245, ${t * 0.7})`);
+    grad.addColorStop(1, `rgba(220, 230, 245, ${t * 0.75})`);
     ctx.strokeStyle = grad;
     ctx.lineWidth = 1.5;
     ctx.globalAlpha = t;
@@ -1199,23 +1342,21 @@ function drawAurora(now) {
 }
 
 function drawConstellations(now) {
-  const active =
-    state === "watching" || state === "replaying" || state === "between" || state === "ended";
-  if (!active) return;
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
 
-  // Base faint lines
-  const maxDist = Math.min(w, h) * 0.4;
+  // Base faint lines between nearby pulsars (also visible on Home screen)
+  const maxDist = Math.min(w, h) * 0.45;
+  const baseLineOpacity = state === "home" ? 0.09 : 0.06;
   for (let i = 0; i < pulsars.length; i++) {
     for (let j = i + 1; j < pulsars.length; j++) {
       const a = pulsars[i],
         b = pulsars[j];
       const dist = Math.hypot(a.x - b.x, a.y - b.y);
       if (dist > maxDist) continue;
-      const alpha = (1 - dist / maxDist) * 0.06;
-      ctx.strokeStyle = `rgba(180, 200, 220, ${alpha})`;
-      ctx.lineWidth = 0.8;
+      const alpha = (1 - dist / maxDist) * baseLineOpacity;
+      ctx.strokeStyle = `rgba(180, 210, 235, ${alpha})`;
+      ctx.lineWidth = 0.9;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
@@ -1230,7 +1371,7 @@ function drawConstellations(now) {
     for (let i = 1; i < watchIndex; i++) {
       ctx.lineTo(pulsars[sequence[i]].x, pulsars[sequence[i]].y);
     }
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.36)";
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.38)";
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 10]);
     ctx.lineDashOffset = -now * 0.05;
@@ -1245,13 +1386,45 @@ function drawConstellations(now) {
     for (let i = 1; i < replayIndex; i++) {
       ctx.lineTo(pulsars[sequence[i]].x, pulsars[sequence[i]].y);
     }
-    ctx.strokeStyle = "rgba(126, 221, 181, 0.65)";
-    ctx.lineWidth = 2.8;
-    ctx.shadowColor = "#7eddb5";
-    ctx.shadowBlur = 10;
+    ctx.strokeStyle = roundClearWave > 0 ? "#f5d76e" : "rgba(126, 221, 181, 0.72)";
+    ctx.lineWidth = 2.8 + roundClearWave * 2;
+    ctx.shadowColor = roundClearWave > 0 ? "#f5d76e" : "#7eddb5";
+    ctx.shadowBlur = 12 + roundClearWave * 14;
     ctx.stroke();
     ctx.shadowBlur = 0;
   }
+
+  // Travelling photon comets along constellation edges
+  for (const bp of beamPulses) {
+    const a = pulsars[bp.fromIdx];
+    const b = pulsars[bp.toIdx];
+    if (!a || !b) continue;
+    const t = Math.min(1, bp.t);
+    const tailT = Math.max(0, t - 0.28);
+    const x1 = a.x + (b.x - a.x) * tailT;
+    const y1 = a.y + (b.y - a.y) * tailT;
+    const x2 = a.x + (b.x - a.x) * t;
+    const y2 = a.y + (b.y - a.y) * t;
+
+    const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+    grad.addColorStop(0, "transparent");
+    grad.addColorStop(1, bp.color);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.shadowColor = bp.color;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(x2, y2, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
   ctx.restore();
 }
 
@@ -1270,23 +1443,24 @@ function drawBgParticles(now) {
 
 function drawPulsar(p, now) {
   // Strictly neutral during replay: energy depends ONLY on p.bloom and p.glow (never currentTarget)
-  const bloomScale = 1 + p.bloom * 0.4;
+  const bloomScale = (1 + p.bloom * 0.36) * p.scale;
   const wiltScale = p.wilt > 0 ? Math.max(0, 1 - p.wilt * 0.5) : 1;
-  const idleScale = 1 + Math.sin(now * 0.002 + p.phase) * 0.045;
+  const idleScale = 1 + Math.sin(now * 0.0022 + p.phase) * 0.045;
   const energy = Math.max(p.bloom, p.glow);
   const isHovered = state === "replaying" && hoveredPulsarId === p.id;
+  const homeDim = state === "home" ? 0.62 : 1;
 
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.scale(bloomScale * wiltScale * idleScale, bloomScale * wiltScale * idleScale);
 
-  const coronaRadius = p.radius * (1.68 + energy * 0.72);
+  const coronaRadius = p.radius * (1.72 + energy * 0.75);
   const corona = ctx.createRadialGradient(0, 0, p.radius * 0.15, 0, 0, coronaRadius);
   corona.addColorStop(0, p.color);
   corona.addColorStop(0.25, `${p.color}66`);
   corona.addColorStop(0.62, `${p.color}18`);
   corona.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.globalAlpha = p.wilt > 0 ? 0.12 : 0.4 + energy * 0.3;
+  ctx.globalAlpha = (p.wilt > 0 ? 0.12 : 0.4 + energy * 0.32) * homeDim;
   ctx.globalCompositeOperation = "lighter";
   ctx.fillStyle = corona;
   ctx.beginPath();
@@ -1297,8 +1471,8 @@ function drawPulsar(p, now) {
   for (let i = 0; i < 3; i++) {
     const ringScale = 1 + i * 0.16;
     ctx.save();
-    ctx.rotate(now * (0.00035 + i * 0.00018) * (i % 2 ? -1 : 1) + p.haloSpin + i * 0.75);
-    ctx.globalAlpha = p.wilt > 0 ? 0.08 : 0.22 + energy * 0.26;
+    ctx.rotate(now * (0.00038 + i * 0.0002) * (i % 2 ? -1 : 1) + p.haloSpin + i * 0.75);
+    ctx.globalAlpha = (p.wilt > 0 ? 0.08 : 0.22 + energy * 0.28) * homeDim;
     ctx.strokeStyle = i === 1 ? "rgba(255,255,255,0.58)" : p.color;
     ctx.lineWidth = Math.max(1, p.radius * (0.026 + i * 0.004));
     ctx.beginPath();
@@ -1320,8 +1494,8 @@ function drawPulsar(p, now) {
   }
 
   ctx.save();
-  ctx.rotate(now * 0.00022 + p.haloSpin);
-  ctx.globalAlpha = p.wilt > 0 ? 0.06 : 0.15 + energy * 0.14;
+  ctx.rotate(now * 0.00024 + p.haloSpin);
+  ctx.globalAlpha = (p.wilt > 0 ? 0.06 : 0.15 + energy * 0.14) * homeDim;
   ctx.strokeStyle = p.color;
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 9]);
@@ -1331,7 +1505,7 @@ function drawPulsar(p, now) {
   ctx.restore();
 
   if (isHovered) {
-    ctx.strokeStyle = "rgba(255,255,255,0.45)";
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(0, 0, p.radius * 1.18, 0, Math.PI * 2);
@@ -1340,21 +1514,21 @@ function drawPulsar(p, now) {
 
   if (p.bloom > 0) {
     ctx.strokeStyle = p.color;
-    ctx.lineWidth = 1.5 + p.bloom * 2;
-    ctx.globalAlpha = p.bloom * 0.7;
+    ctx.lineWidth = 1.5 + p.bloom * 2.2;
+    ctx.globalAlpha = p.bloom * 0.72 * homeDim;
     ctx.beginPath();
-    ctx.arc(0, 0, p.radius + 12 + (1 - p.bloom) * 48, 0, Math.PI * 2);
+    ctx.arc(0, 0, p.radius + 12 + (1 - p.bloom) * 52, 0, Math.PI * 2);
     ctx.stroke();
   }
 
   for (let i = 0; i < 8; i++) {
-    const a = now * (0.00038 + i * 0.000045) * (i % 2 ? -1 : 1) + p.phase + i * 0.78;
+    const a = now * (0.0004 + i * 0.000045) * (i % 2 ? -1 : 1) + p.phase + i * 0.78;
     const orbitX = p.radius * (0.86 + (i % 3) * 0.14);
     const orbitY = p.radius * (0.34 + (i % 2) * 0.1);
     const ox = Math.cos(a) * orbitX;
     const oy = Math.sin(a) * orbitY;
     const sparkle = 0.55 + Math.sin(now * 0.003 + i + p.phase) * 0.25;
-    ctx.globalAlpha = p.wilt > 0 ? 0.12 : sparkle;
+    ctx.globalAlpha = (p.wilt > 0 ? 0.12 : sparkle) * homeDim;
     ctx.shadowColor = p.color;
     ctx.shadowBlur = 6 + energy * 8;
     ctx.fillStyle = i % 4 === 0 ? "#ffffff" : p.color;
@@ -1364,7 +1538,7 @@ function drawPulsar(p, now) {
   }
   ctx.shadowBlur = 0;
 
-  ctx.globalAlpha = p.wilt > 0 ? 0.4 : 1;
+  ctx.globalAlpha = (p.wilt > 0 ? 0.4 : 1) * homeDim;
   const coreRadius = p.radius * (0.34 + energy * 0.12) + Math.sin(now * 0.004 + p.id) * 1.2;
   const centerGrad = ctx.createRadialGradient(
     -coreRadius * 0.3,
@@ -1386,19 +1560,21 @@ function drawPulsar(p, now) {
   ctx.fill();
   ctx.shadowBlur = 0;
 
-  ctx.globalAlpha = p.wilt > 0 ? 0.12 : 0.45 + energy * 0.2;
+  ctx.globalAlpha = (p.wilt > 0 ? 0.12 : 0.45 + energy * 0.2) * homeDim;
   ctx.strokeStyle = "rgba(255,255,255,0.72)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.arc(0, 0, coreRadius * 1.28, Math.PI * 1.08, Math.PI * 1.72);
   ctx.stroke();
 
-  ctx.globalAlpha = p.wilt > 0 ? 0.2 : 0.75;
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `700 ${Math.max(10, p.radius * 0.34)}px 'Outfit', system-ui`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(String(p.id + 1), 0, 1);
+  if (state !== "home") {
+    ctx.globalAlpha = p.wilt > 0 ? 0.2 : 0.7;
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `700 ${Math.max(10, p.radius * 0.32)}px 'Outfit', system-ui`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(p.id + 1), 0, 1);
+  }
 
   ctx.restore();
 }
@@ -1421,20 +1597,17 @@ function drawPowerUp(now) {
   ctx.arc(0, 0, aura, 0, Math.PI * 2);
   ctx.fill();
 
-  // Inner orb
   ctx.fillStyle = "rgba(12, 18, 32, 0.85)";
   ctx.beginPath();
   ctx.arc(0, 0, 19, 0, Math.PI * 2);
   ctx.fill();
 
-  // Crisp symbol
   ctx.fillStyle = "#f5d76e";
   ctx.font = "700 18px 'Outfit', system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(p.symbol || "★", 0, 1);
 
-  // Rotating dashed ring
   ctx.strokeStyle = "rgba(245, 215, 110, 0.85)";
   ctx.lineWidth = 2;
   ctx.setLineDash([4, 4]);
@@ -1452,9 +1625,9 @@ function drawReplayIndicators(now) {
 
   for (let i = 0; i < replayIndex; i++) {
     const p = pulsars[sequence[i]];
-    ctx.globalAlpha = 0.6;
+    ctx.globalAlpha = 0.65;
     ctx.fillStyle = "#7eddb5";
-    ctx.font = `800 ${p.radius * 0.55}px 'Outfit', system-ui`;
+    ctx.font = `800 ${p.radius * 0.52}px 'Outfit', system-ui`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("✓", p.x, p.y - p.radius - 12);
@@ -1495,9 +1668,9 @@ function drawReplayIndicators(now) {
 
 function drawCountdown(now) {
   if (state !== "countdown") return;
-  const elapsed = (now - countdownStart) % 800;
-  const scale = 1 + (1 - elapsed / 800) * 0.5;
-  const alpha = 1 - elapsed / 800;
+  const elapsed = (now - countdownStart) % 700;
+  const scale = 1 + (1 - elapsed / 700) * 0.5;
+  const alpha = 1 - elapsed / 700;
 
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -1516,13 +1689,6 @@ function render(now) {
     ctx.translate(FX.shakeX, FX.shakeY);
   }
 
-  if (state === "watching") {
-    const zoom = 1.02;
-    ctx.translate(w / 2, h / 2);
-    ctx.scale(zoom, zoom);
-    ctx.translate(-w / 2, -h / 2);
-  }
-
   drawBackground(now);
   drawGalaxyBand(now);
   drawNebulae(now);
@@ -1532,16 +1698,20 @@ function render(now) {
   drawShootingStars();
   drawBgParticles(now);
 
-  const active =
-    state === "watching" || state === "replaying" || state === "between" || state === "ended";
-  if (active) {
-    drawConstellations(now);
-    FX.drawRipples(ctx);
-    for (const p of pulsars) drawPulsar(p, now);
-    drawPowerUp(now);
-    drawReplayIndicators(now);
-    FX.drawParticles(ctx);
-  }
+  // Apply smooth camera zoom & parallax to the constellation stage
+  ctx.save();
+  ctx.translate(w / 2 + camPanX, h / 2 + camPanY);
+  ctx.scale(camZoom, camZoom);
+  ctx.translate(-w / 2, -h / 2);
+
+  drawConstellations(now);
+  FX.drawRipples(ctx);
+  for (const p of pulsars) drawPulsar(p, now);
+  drawPowerUp(now);
+  drawReplayIndicators(now);
+  FX.drawParticles(ctx);
+
+  ctx.restore();
 
   drawCountdown(now);
 
@@ -1554,7 +1724,7 @@ function render(now) {
     Math.max(w, h) * 0.8
   );
   vg.addColorStop(0, "transparent");
-  vg.addColorStop(1, "rgba(0,0,0,0.4)");
+  vg.addColorStop(1, "rgba(0,0,0,0.42)");
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, w, h);
 

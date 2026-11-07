@@ -147,7 +147,7 @@ const FX = (() => {
   // ── Screen Shake ──
   function shake(intensity) { shakeInt = Math.max(shakeInt, intensity); }
 
-  function updateShake(dt) {
+  function updateShake() {
     if (shakeInt > 0.1) {
       shakeX = (Math.random() - 0.5) * shakeInt * 2;
       shakeY = (Math.random() - 0.5) * shakeInt * 2;
@@ -157,26 +157,39 @@ const FX = (() => {
     }
   }
 
-  // ── Ripples ──
-  function spawnRipple(x, y, color, maxR) {
-    ripples.push({ x, y, color, r: 0, maxR: maxR || 120, alpha: 0.6 });
+  // ── Multi-Ring Harmonic Ripples ──
+  function spawnRipple(x, y, color, maxR, rings = 2) {
+    for (let k = 0; k < rings; k++) {
+      ripples.push({
+        x,
+        y,
+        color,
+        r: k * 6,
+        maxR: (maxR || 130) * (1 - k * 0.22),
+        alpha: 0.65 - k * 0.2,
+        speed: 240 - k * 45,
+        width: 2.2 - k * 0.7,
+      });
+    }
   }
 
   function updateRipples(dt) {
     for (let i = ripples.length - 1; i >= 0; i--) {
       const r = ripples[i];
-      r.r += dt * 220;
-      r.alpha = 0.6 * (1 - r.r / r.maxR);
+      r.r += dt * (r.speed || 220);
+      const prog = r.r / r.maxR;
+      r.alpha = Math.max(0, (1 - prog * prog) * 0.6);
       if (r.r >= r.maxR) ripples.splice(i, 1);
     }
   }
 
   function drawRipples(ctx) {
     ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     for (const r of ripples) {
       ctx.globalAlpha = Math.max(0, r.alpha);
       ctx.strokeStyle = r.color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = r.width || 2;
       ctx.beginPath();
       ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
       ctx.stroke();
@@ -184,21 +197,26 @@ const FX = (() => {
     ctx.restore();
   }
 
-  // ── Particles ──
+  // ── Luminous Trail Particles ──
   const particles = [];
 
   function spawn(x, y, color, count, opts = {}) {
     for (let i = 0; i < count; i++) {
-      const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
-      const speed = (opts.speed || 80) + Math.random() * (opts.speedVar || 100);
+      const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.55;
+      const speed = (opts.speed || 90) + Math.random() * (opts.speedVar || 110);
+      const life = (opts.life || 0.55) + Math.random() * (opts.lifeVar || 0.45);
       particles.push({
-        x, y, color,
+        x,
+        y,
+        prevX: x,
+        prevY: y,
+        color,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        size: (opts.size || 2) + Math.random() * (opts.sizeVar || 3.5),
-        life: (opts.life || 0.5) + Math.random() * (opts.lifeVar || 0.4),
-        maxLife: (opts.life || 0.5) + Math.random() * (opts.lifeVar || 0.4),
-        glow: opts.glow || false,
+        size: (opts.size || 2) + Math.random() * (opts.sizeVar || 3.2),
+        life,
+        maxLife: life,
+        glow: opts.glow !== undefined ? opts.glow : true,
       });
     }
   }
@@ -206,29 +224,40 @@ const FX = (() => {
   function spawnCelebration(w, h) {
     const cx = w / 2, cy = h / 2;
     const cols = ['#ff7b7b', '#b8a9e8', '#f5d76e', '#7eddb5', '#ffb5c5', '#87ceeb', '#ffab76'];
-    for (let i = 0; i < 60; i++) {
-      spawn(cx + (Math.random() - 0.5) * 100, cy + (Math.random() - 0.5) * 60,
-        cols[i % 7], 1, { speed: 120, speedVar: 200, size: 2, sizeVar: 4, life: 0.8, lifeVar: 0.6, glow: true });
+    for (let i = 0; i < 65; i++) {
+      spawn(cx + (Math.random() - 0.5) * 120, cy + (Math.random() - 0.5) * 70,
+        cols[i % 7], 1, { speed: 140, speedVar: 220, size: 2.2, sizeVar: 3.8, life: 0.85, lifeVar: 0.6, glow: true });
     }
   }
 
   function updateParticles(dt) {
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
+      p.prevX = p.x;
+      p.prevY = p.y;
       p.life -= dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      p.vy += 35 * dt;
-      p.vx *= 0.98;
+      p.vy += 28 * dt;
+      p.vx *= 0.965;
+      p.vy *= 0.965;
       if (p.life <= 0) particles.splice(i, 1);
     }
   }
 
   function drawParticles(ctx) {
     ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     for (const p of particles) {
       const t = Math.max(0, p.life / p.maxLife);
       ctx.globalAlpha = t;
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = Math.max(1, p.size * t * 0.75);
+      ctx.beginPath();
+      ctx.moveTo(p.prevX, p.prevY);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+
       if (p.glow) {
         ctx.shadowColor = p.color;
         ctx.shadowBlur = 8;
